@@ -1,8 +1,8 @@
-/* Livro-Caixa — permite abrir o app sem internet. Nunca toca nas chamadas à planilha. */
-const VERSAO = 'livrocaixa-v1';
+/* Finanças G&L — permite abrir o app sem internet. Nunca toca nas chamadas à planilha. */
+const VERSAO = 'financasgl-v2';
 const ARQUIVOS = [
   './', 'index.html', 'estilo.css', 'tema.js', 'logica.js', 'sincronia.js', 'graficos.js', 'app.js',
-  'manifest.webmanifest', 'icones/icone-192.png', 'icones/icone-512.png', 'icones/icone-maskable-512.png',
+  'pdf.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest', 'icones/icone-192.png', 'icones/icone-512.png', 'icones/icone-maskable-512.png',
 ];
 
 self.addEventListener('install', (e) => {

@@ -1,4 +1,4 @@
-/* Livro-Caixa — gráficos em SVG, sem bibliotecas. Todo gráfico traz legenda, dica ao tocar e versão em tabela. */
+/* Finanças G&L — gráficos em SVG, sem bibliotecas. Todo gráfico traz legenda, dica ao tocar e versão em tabela. */
 (function (raiz) {
   'use strict';
 
@@ -248,5 +248,37 @@
     requestAnimationFrame(passo);
   }
 
-  raiz.Graficos = { linhas, colunas, contar };
+  /* ---------- gráfico já desenhado vira imagem, para entrar no PDF ---------- */
+  const PROPS_IMAGEM = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'font-size', 'font-weight', 'text-anchor'];
+
+  async function paraImagem(el, escala = 2.5) {
+    const svg = el.querySelector('.plot svg');
+    const copia = svg.cloneNode(true);
+    const originais = [svg, ...svg.querySelectorAll('*')];
+    const copias = [copia, ...copia.querySelectorAll('*')];
+    originais.forEach((o, i) => {
+      const estilo = getComputedStyle(o);
+      if (estilo.visibility === 'hidden' || o.getAttribute('visibility') === 'hidden') { copias[i].remove(); return; }
+      const texto = PROPS_IMAGEM.map((p) => `${p}:${estilo.getPropertyValue(p)}`).join(';');
+      copias[i].setAttribute('style', `${texto};font-family:Helvetica,Arial,sans-serif;animation:none`);
+    });
+    const [, , largura, altura] = svg.getAttribute('viewBox').split(' ').map(Number);
+    copia.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copia.setAttribute('width', largura);
+    copia.setAttribute('height', altura);
+    copia.removeAttribute('aria-hidden');
+    const imagem = new Image();
+    imagem.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(copia));
+    await imagem.decode();
+    const tela = document.createElement('canvas');
+    tela.width = Math.round(largura * escala);
+    tela.height = Math.round(altura * escala);
+    const ctx = tela.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tela.width, tela.height);
+    ctx.drawImage(imagem, 0, 0, tela.width, tela.height);
+    return { url: tela.toDataURL('image/png'), largura, altura };
+  }
+
+  raiz.Graficos = { linhas, colunas, contar, paraImagem };
 })(globalThis);

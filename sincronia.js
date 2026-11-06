@@ -1,4 +1,4 @@
-/* Livro-Caixa — sincronização com a planilha. O app funciona offline; isto só troca as diferenças. */
+/* Finanças G&L — sincronização com a planilha. O app funciona offline; isto só troca as diferenças. */
 (function (raiz) {
   'use strict';
 

@@ -1,5 +1,6 @@
 /* Conceito: um livro-caixa moderno. Papel levemente esverdeado, verde de cédula como marca,
-   pautas finas nas listas e valores alinhados em coluna, como num razão contábil. */
+   pautas finas nas listas e valores alinhados em coluna, como num razão contábil.
+   A área conjunta troca o verde por índigo, para se ver de relance em qual área se está. */
 :root {
   color-scheme: light;
   --fundo: #eef2f0;
@@ -13,6 +14,9 @@
   --marca: #0b5d52;
   --sobre-marca: #ffffff;
   --marca-suave: #d8ebe6;
+  --conj: #4a3f9f;
+  --sobre-conj: #ffffff;
+  --conj-suave: #e4e1f7;
   --s1: #2a78d6;
   --s2: #eb6834;
   --s3: #1baf7a;
@@ -36,6 +40,7 @@
     --marca-suave: #1b3a33; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --pos: #3fc25a; --neg: #f07b7b;
     --aviso: #f3c261; --aviso-fundo: #33290f; --critico-fundo: #3a1b1b;
     --sombra: 0 1px 2px rgb(0 0 0 / .3); --sombra-forte: 0 12px 40px rgb(0 0 0 / .6);
+    --conj: #a9a0f2; --sobre-conj: #15112e; --conj-suave: #2a2552;
   }
 }
 :root[data-theme="dark"] {
@@ -45,6 +50,15 @@
   --marca-suave: #1b3a33; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --pos: #3fc25a; --neg: #f07b7b;
   --aviso: #f3c261; --aviso-fundo: #33290f; --critico-fundo: #3a1b1b;
   --sombra: 0 1px 2px rgb(0 0 0 / .3); --sombra-forte: 0 12px 40px rgb(0 0 0 / .6);
+  --conj: #a9a0f2; --sobre-conj: #15112e; --conj-suave: #2a2552;
+}
+body[data-area="conjunta"] { --marca: var(--conj); --sobre-marca: var(--sobre-conj); --marca-suave: var(--conj-suave); }
+
+/* Gráfico desenhado fora da tela para virar imagem do PDF: sempre nas cores do tema claro. */
+.pdf-render {
+  position: fixed; top: 0; left: -10000px; width: 720px; pointer-events: none;
+  --superficie: #ffffff; --linha: #dbe3df; --base: #b4c2bc; --tinta: #10201c; --tinta-3: #66756f;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
 }
 
 * { box-sizing: border-box; }
@@ -136,6 +150,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .seg { display: inline-flex; padding: 3px; background: var(--superficie-2); border: 1px solid var(--linha); border-radius: 12px; max-width: 100%; }
 .seg button { min-height: 34px; padding: 4px 12px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--tinta-2); transition: background .15s, color .15s; white-space: nowrap; }
 .seg button[aria-pressed="true"] { background: var(--superficie); color: var(--tinta); font-weight: 700; box-shadow: 0 1px 3px rgb(0 0 0 / .14); }
+.seletor-area button[aria-pressed="true"] { background: var(--marca); color: var(--sobre-marca); }
 .seg.largo { display: flex; width: 100%; }
 .seg.largo button { flex: 1 1 0; min-width: 0; padding-inline: 6px; white-space: normal; line-height: 1.15; }
 .seg.saida button[aria-pressed="true"] { color: var(--neg); }

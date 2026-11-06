@@ -1,5 +1,5 @@
 /**
- * Livro-Caixa — guarda os dados na sua própria planilha Google.
+ * Finanças G&L — guarda os dados na sua própria planilha Google.
  *
  * Instalação (o passo a passo completo está no LEIA-ME.md):
  *  1. Crie uma planilha e abra Extensões > Apps Script.
@@ -26,7 +26,7 @@ function configurar() {
     props.setProperty('CHAVE', chave);
   }
   props.setProperty('PLANILHA_ID', planilha.getId());
-  Logger.log('Chave de acesso do Livro-Caixa: ' + chave);
+  Logger.log('Chave de acesso do Finanças G&L: ' + chave);
   return chave;
 }
 

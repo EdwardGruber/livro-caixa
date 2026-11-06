@@ -212,6 +212,55 @@ test('previsão de meta', () => {
   assert.equal(Fin.previsaoMeta({ alvo: 100, guardado: 0 }, HOJE).meses, null);
 });
 
+test('áreas: dados antigos ficam com a primeira pessoa e nada se mistura', () => {
+  const e = base();
+  Object.values(Fin.padroesDaArea('p2').contas).forEach((c) => { e.contas[c.id] = { ...c, saldoInicial: c.id === 'p2-ct-banco' ? 70000 : 0 }; });
+  Object.values(Fin.padroesDaArea('conjunta').contas).forEach((c) => { e.contas[c.id] = { ...c, saldoInicial: 20000 }; });
+  const antigo = lanc(e, { valor: 1000, data: '2026-11-01' });
+  const dela = lanc(e, { valor: 2000, data: '2026-11-01', area: 'p2', contaId: 'p2-ct-banco' });
+  const junto = lanc(e, { valor: 3000, data: '2026-11-01', area: 'conjunta', contaId: 'conjunta-ct-banco' });
+
+  const v1 = Fin.visaoDaArea(e, 'p1');
+  const v2 = Fin.visaoDaArea(e, 'p2');
+  const vc = Fin.visaoDaArea(e, 'conjunta');
+  assert.deepEqual(Object.keys(v1.lancamentos), [antigo.id]);
+  assert.deepEqual(Object.keys(v2.lancamentos), [dela.id]);
+  assert.deepEqual(Object.keys(vc.lancamentos), [junto.id]);
+  assert.equal(Fin.saldoHoje(v1, HOJE), 150000 - 1000);
+  assert.equal(Fin.saldoHoje(v2, HOJE), 70000 - 2000);
+  assert.equal(Fin.saldoHoje(vc, HOJE), 20000 - 3000);
+  assert.equal(Fin.projetar(v2, HOJE, 2, { variavel: 0 }).saldoFinal, 70000 - 2000);
+});
+
+test('áreas: padrões não colidem com os da primeira pessoa e a estimativa é separada', () => {
+  const p1 = Fin.padroesDaArea('p1');
+  const p2 = Fin.padroesDaArea('p2');
+  const conj = Fin.padroesDaArea('conjunta');
+  Object.keys(p2.contas).concat(Object.keys(p2.categorias), Object.keys(conj.categorias)).forEach((id) => {
+    assert.equal(p1.contas[id] || p1.categorias[id], undefined);
+  });
+  assert.equal(Object.keys(conj.contas).length, 1);
+  assert.equal(Object.values(conj.contas)[0].nome, 'Conta conjunta');
+  assert.ok(Object.values(p2.categorias).every((c) => c.area === 'p2'));
+
+  const e = Fin.estadoPadrao();
+  e.config.geral.variavelManual = 111;
+  Object.assign(e.config, p2.config);
+  e.config['geral-p2'].variavelManual = 222;
+  assert.equal(Fin.visaoDaArea(e, 'p1').config.geral.variavelManual, 111);
+  assert.equal(Fin.visaoDaArea(e, 'p2').config.geral.variavelManual, 222);
+  assert.equal(Fin.visaoDaArea(e, 'conjunta').config.geral.variavelManual, null);
+});
+
+test('áreas: fixo guarda a área e a ocorrência a herda', () => {
+  const e = base();
+  e.recorrentes.r1 = { id: 'r1', area: 'conjunta', tipo: 'despesa', descricao: 'Luz', valor: 100, inicio: '2026-11-10', contaId: 'x', categoriaId: 'x', atualizadoEm: 2 };
+  assert.equal(Fin.ocorrencias(Fin.visaoDaArea(e, 'p1'), '2026-11').length, 0);
+  const oc = Fin.ocorrencias(Fin.visaoDaArea(e, 'conjunta'), '2026-11');
+  assert.equal(oc.length, 1);
+  assert.equal(oc[0].area, 'conjunta');
+});
+
 test('alertas avisam saldo negativo e limite estourado', () => {
   const e = base();
   e.config.geral.variavelManual = 0;

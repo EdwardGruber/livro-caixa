@@ -1,4 +1,4 @@
-/* Livro-Caixa — cálculos puros, sem tela nem rede. Valores sempre em centavos (inteiros). */
+/* Finanças G&L — cálculos puros, sem tela nem rede. Valores sempre em centavos (inteiros). */
 (function (raiz) {
   'use strict';
 
@@ -65,7 +65,14 @@
   }
 
   /* ---------- estado ---------- */
-  const COLECOES = ['contas', 'categorias', 'lancamentos', 'recorrentes', 'metas', 'config'];
+  const COLECOES = ['contas', 'categorias', 'lancamentos', 'recorrentes', 'metas', 'config', 'perfis'];
+
+  /* Áreas: cada pessoa tem a sua, e há uma conjunta. Registro sem área é da primeira pessoa,
+     que é quem já usava o app antes de existirem perfis. */
+  const AREA_PRIMEIRA = 'p1';
+  const AREA_SEGUNDA = 'p2';
+  const AREA_CONJUNTA = 'conjunta';
+  const areaDe = (r) => r.area || AREA_PRIMEIRA;
 
   function vivos(estado, colecao) {
     return Object.values(estado[colecao] || {}).filter((r) => !r.excluido);
@@ -97,6 +104,43 @@
     });
     e.config.geral = r('geral', { variavelManual: null });
     return e;
+  }
+
+  /* Só os registros de uma área: todos os cálculos e telas trabalham em cima disto. */
+  function visaoDaArea(estado, area) {
+    const v = estadoVazio();
+    COLECOES.forEach((c) => {
+      if (c === 'perfis' || c === 'config') return;
+      Object.entries(estado[c] || {}).forEach(([id, r]) => {
+        if (areaDe(r) === area) v[c][id] = r;
+      });
+    });
+    v.perfis = estado.perfis || {};
+    const idGeral = area === AREA_PRIMEIRA ? 'geral' : `geral-${area}`;
+    const config = estado.config || {};
+    v.config = { geral: config[idGeral] || { id: idGeral, area, atualizadoEm: 1, variavelManual: null } };
+    return v;
+  }
+
+  /* Contas e categorias iniciais de cada área, com IDs fixos para não duplicar entre aparelhos. */
+  function padroesDaArea(area) {
+    const base = estadoPadrao();
+    if (area === AREA_PRIMEIRA) return base;
+    const saida = estadoVazio();
+    const contas = area === AREA_CONJUNTA
+      ? [{ ...base.contas['ct-banco'], nome: 'Conta conjunta', grupo: 'Conjunta' }]
+      : Object.values(base.contas);
+    contas.forEach((r) => {
+      const id = `${area}-${r.id}`;
+      saida.contas[id] = { ...r, id, area };
+    });
+    Object.values(base.categorias).forEach((r) => {
+      const id = `${area}-${r.id}`;
+      saida.categorias[id] = { ...r, id, area };
+    });
+    const idGeral = `geral-${area}`;
+    saida.config[idGeral] = { ...base.config.geral, id: idGeral, area };
+    return saida;
   }
 
   const contaDe = (estado, id) => (estado.contas || {})[id];
@@ -153,7 +197,7 @@
         if (!reais.has(rec.id + '|' + ym) && !pulados.has(ym)) {
           const [a, m] = partes(ym);
           saida.push({
-            id: `v:${rec.id}:${ym}`, virtual: true, recorrenteId: rec.id, competencia: ym,
+            id: `v:${rec.id}:${ym}`, virtual: true, recorrenteId: rec.id, competencia: ym, area: rec.area,
             tipo: rec.tipo, descricao: rec.descricao, valor: rec.valor,
             categoriaId: rec.categoriaId, contaId: rec.contaId,
             data: montaData(a, m, dia), certeza: rec.certeza || 'certa', pago: false,
@@ -420,7 +464,8 @@
   }
 
   const api = {
-    COLECOES, somaMeses, somaDias, hojeLocal, nomeMes, mesDe, diasNoMes, lerReais, reais,
+    COLECOES, AREA_PRIMEIRA, AREA_SEGUNDA, AREA_CONJUNTA, areaDe, visaoDaArea, padroesDaArea,
+    somaMeses, somaDias, hojeLocal, nomeMes, mesDe, diasNoMes, lerReais, reais,
     vivos, estadoVazio, estadoPadrao, vencimentoFatura, dataCaixa, liquidado, ocorrencias,
     itensDoMes, saldoHoje, saldoConta, gastoVariavel, mediaVariavel, fluxosSimulacao, projetar,
     historicoSaldo, resumoMes, proximos, criarParcelas, parcelamentos, previsaoMeta, alertas,

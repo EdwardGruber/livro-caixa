@@ -1,8 +1,25 @@
-# Livro-Caixa
+# Finanças G&L
 
-Controle pessoal de entradas, gastos fixos, parcelas e projeção de saldo. Funciona no computador e no celular, inclusive sem internet.
+Controle de entradas, gastos fixos, parcelas e projeção de saldo para duas pessoas. Cada uma tem as próprias finanças, e as duas têm uma área conjunta. Funciona no computador e no celular, inclusive sem internet.
 
-Não depende de nenhum serviço de IA. São arquivos estáticos em um site gratuito, e os dados ficam em uma planilha na sua conta Google.
+Não depende de nenhum serviço de IA. São arquivos estáticos em um site gratuito, e os dados ficam em uma planilha Google.
+
+## Como as áreas funcionam
+
+- Cada aparelho fica no perfil de uma pessoa e abre direto nas finanças dela.
+- O botão **Minhas / Conjunta** troca de área. A área conjunta usa outra cor, para se ver de relance onde se está.
+- Cada área tem as próprias contas, categorias, limites, fixos e metas. Nada se soma nem se mistura entre elas.
+- Os lançamentos que existiam antes dos perfis pertencem à primeira pessoa.
+- Para trocar a pessoa de um aparelho, use **Ajustes > Trocar de pessoa**.
+
+A separação é de organização, não de segurança. As três áreas ficam na mesma planilha, com a mesma chave. O backup em arquivo também inclui as três.
+
+## Exportar em PDF
+
+- **Lançamentos > Exportar este mês em PDF:** resumo e lista do mês aberto, respeitando o filtro aplicado na tela.
+- **Gráficos > Exportar gráficos em PDF:** entradas × saídas, saldo, categorias do mês e valores mês a mês.
+
+O PDF é gerado no próprio aparelho, com a biblioteca [jsPDF](https://github.com/parallax/jsPDF) (licença MIT), guardada em `vendor/`.
 
 ## Como os dados são guardados
 
@@ -34,9 +51,9 @@ Não depende de nenhum serviço de IA. São arquivos estáticos em um site gratu
 
 ## Passo 3: conectar os aparelhos
 
-No primeiro aparelho, abra **Ajustes > Sincronização**, cole a URL e a chave e clique em **Conectar**.
+No primeiro aparelho, abra **Ajustes > Sincronização**, cole a URL e a chave e clique em **Conectar**. Informe os nomes das duas pessoas quando o app pedir.
 
-Nos demais, abra o site, escolha **Já uso em outro aparelho** e informe os mesmos dados.
+Nos demais, inclusive os da outra pessoa, abra o site, escolha **Já uso em outro aparelho**, informe os mesmos dados e diga quem usa aquele aparelho.
 
 Para instalar no celular:
 
