@@ -1,6 +1,6 @@
-/* Conceito: um livro-caixa moderno. Papel levemente esverdeado, verde de cédula como marca,
-   pautas finas nas listas e valores alinhados em coluna, como num razão contábil.
-   A área conjunta troca o verde por índigo, para se ver de relance em qual área se está. */
+/* Conceito: um painel financeiro noturno sobre a base de um livro-caixa. Fundo quase preto com
+   brilho esverdeado, cartões de vidro escuro, linhas acesas com degradê e números grandes.
+   No tema claro, a mesma linguagem sem o brilho. A área conjunta troca o verde por violeta. */
 :root {
   color-scheme: light;
   --fundo: #eef2f0;
@@ -17,9 +17,9 @@
   --conj: #4a3f9f;
   --sobre-conj: #ffffff;
   --conj-suave: #e4e1f7;
-  --s1: #2a78d6;
-  --s2: #eb6834;
-  --s3: #1baf7a;
+  --s1: #12996a;
+  --s2: #e8641f;
+  --s3: #6f5be0;
   --pos: #006300;
   --neg: #b92f2f;
   --aviso: #8a5a00;
@@ -29,45 +29,71 @@
   --sombra-forte: 0 12px 40px rgb(16 32 28 / .24);
   --titulo: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --texto: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --raio: 16px;
+  --raio: 18px;
   --barra-h: 64px;
+  --glow: 0px;
+  --cartao-fundo: var(--superficie);
+  --brilho-fundo-1: rgb(18 153 106 / .09);
+  --brilho-fundo-2: rgb(111 91 224 / .06);
+  --heroi-a: #0e6b5c; --heroi-b: #083f36; --heroi-borda: transparent; --heroi-tinta: #ffffff; --heroi-acento: #8ff0c9;
+  --conj-heroi-a: #5547b8; --conj-heroi-b: #2f2677; --conj-heroi-acento: #d4ccff; --conj-heroi-borda: transparent;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --fundo: #0e1513; --superficie: #17201e; --superficie-2: #1d2825; --tinta: #eaf1ee; --tinta-2: #b4c2bc;
-    --tinta-3: #91a19b; --linha: #26322e; --base: #3d4c46; --marca: #4cc2a9; --sobre-marca: #06201a;
-    --marca-suave: #1b3a33; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --pos: #3fc25a; --neg: #f07b7b;
-    --aviso: #f3c261; --aviso-fundo: #33290f; --critico-fundo: #3a1b1b;
-    --sombra: 0 1px 2px rgb(0 0 0 / .3); --sombra-forte: 0 12px 40px rgb(0 0 0 / .6);
-    --conj: #a9a0f2; --sobre-conj: #15112e; --conj-suave: #2a2552;
+    --fundo: #070c0b; --superficie: #0f1715; --superficie-2: #16211e; --tinta: #e8f2ee; --tinta-2: #a9bab3;
+    --tinta-3: #82958e; --linha: #1e2b27; --base: #34453f; --marca: #34e0a1; --sobre-marca: #03140e;
+    --marca-suave: #10302a; --s1: #16a878; --s2: #e8641f; --s3: #6f62ea; --pos: #3fd98a; --neg: #ff7b72;
+    --aviso: #f3c261; --aviso-fundo: #2e250d; --critico-fundo: #361818;
+    --sombra: inset 0 1px 0 rgb(255 255 255 / .04), 0 14px 34px -16px rgb(0 0 0 / .7); --sombra-forte: 0 16px 48px rgb(0 0 0 / .7);
+    --conj: #a99cff; --sobre-conj: #120e2e; --conj-suave: #231d4d;
+    --glow: 6px; --cartao-fundo: linear-gradient(180deg, #121d1a 0%, #0d1513 100%);
+    --brilho-fundo-1: rgb(22 168 120 / .16); --brilho-fundo-2: rgb(111 98 234 / .09);
+    --heroi-a: #0f3a2d; --heroi-b: #08120f; --heroi-borda: rgb(52 224 161 / .28); --heroi-tinta: #eafff6; --heroi-acento: #34e0a1;
+    --conj-heroi-a: #2a2160; --conj-heroi-b: #0d0b1c; --conj-heroi-acento: #a99cff; --conj-heroi-borda: rgb(169 156 255 / .3);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --fundo: #0e1513; --superficie: #17201e; --superficie-2: #1d2825; --tinta: #eaf1ee; --tinta-2: #b4c2bc;
-  --tinta-3: #91a19b; --linha: #26322e; --base: #3d4c46; --marca: #4cc2a9; --sobre-marca: #06201a;
-  --marca-suave: #1b3a33; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --pos: #3fc25a; --neg: #f07b7b;
-  --aviso: #f3c261; --aviso-fundo: #33290f; --critico-fundo: #3a1b1b;
-  --sombra: 0 1px 2px rgb(0 0 0 / .3); --sombra-forte: 0 12px 40px rgb(0 0 0 / .6);
-  --conj: #a9a0f2; --sobre-conj: #15112e; --conj-suave: #2a2552;
+  --fundo: #070c0b; --superficie: #0f1715; --superficie-2: #16211e; --tinta: #e8f2ee; --tinta-2: #a9bab3;
+  --tinta-3: #82958e; --linha: #1e2b27; --base: #34453f; --marca: #34e0a1; --sobre-marca: #03140e;
+  --marca-suave: #10302a; --s1: #16a878; --s2: #e8641f; --s3: #6f62ea; --pos: #3fd98a; --neg: #ff7b72;
+  --aviso: #f3c261; --aviso-fundo: #2e250d; --critico-fundo: #361818;
+  --sombra: inset 0 1px 0 rgb(255 255 255 / .04), 0 14px 34px -16px rgb(0 0 0 / .7); --sombra-forte: 0 16px 48px rgb(0 0 0 / .7);
+  --conj: #a99cff; --sobre-conj: #120e2e; --conj-suave: #231d4d;
+  --glow: 6px; --cartao-fundo: linear-gradient(180deg, #121d1a 0%, #0d1513 100%);
+  --brilho-fundo-1: rgb(22 168 120 / .16); --brilho-fundo-2: rgb(111 98 234 / .09);
+  --heroi-a: #0f3a2d; --heroi-b: #08120f; --heroi-borda: rgb(52 224 161 / .28); --heroi-tinta: #eafff6; --heroi-acento: #34e0a1;
+  --conj-heroi-a: #2a2160; --conj-heroi-b: #0d0b1c; --conj-heroi-acento: #a99cff; --conj-heroi-borda: rgb(169 156 255 / .3);
 }
-body[data-area="conjunta"] { --marca: var(--conj); --sobre-marca: var(--sobre-conj); --marca-suave: var(--conj-suave); }
+body[data-area="conjunta"] {
+  --marca: var(--conj); --sobre-marca: var(--sobre-conj); --marca-suave: var(--conj-suave);
+  --heroi-a: var(--conj-heroi-a); --heroi-b: var(--conj-heroi-b); --heroi-acento: var(--conj-heroi-acento); --heroi-borda: var(--conj-heroi-borda);
+}
 
 /* Gráfico desenhado fora da tela para virar imagem do PDF: sempre nas cores do tema claro. */
 .pdf-render {
   position: fixed; top: 0; left: -10000px; width: 720px; pointer-events: none;
   --superficie: #ffffff; --linha: #dbe3df; --base: #b4c2bc; --tinta: #10201c; --tinta-3: #66756f;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --s1: #12996a; --s2: #e8641f; --s3: #6f5be0;
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--fundo); color: var(--tinta);
+  margin: 0; color: var(--tinta); background: var(--fundo);
   font: 400 15px/1.45 var(--texto); -webkit-font-smoothing: antialiased;
 }
+/* Brilho do fundo: uma camada fixa que respira bem devagar. */
+body::before {
+  content: ""; position: fixed; inset: -15%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(42% 38% at 18% 6%, var(--brilho-fundo-1), transparent 70%),
+    radial-gradient(36% 32% at 88% 4%, var(--brilho-fundo-2), transparent 70%);
+  animation: aurora 26s ease-in-out infinite alternate;
+}
+@keyframes aurora { to { transform: translate(5%, 4%) scale(1.08); } }
 h1, h2, h3 { margin: 0; font-family: var(--titulo); font-weight: 700; text-wrap: balance; letter-spacing: -.01em; }
 h2 { font-size: 17px; }
 h3 { font-size: 15px; }
@@ -87,7 +113,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .moldura { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 100dvh; }
 .navegacao {
   position: fixed; inset: auto 0 0 0; z-index: 20; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-  background: var(--superficie); border-top: 1px solid var(--linha);
+  background: color-mix(in srgb, var(--superficie) 86%, transparent); border-top: 1px solid var(--linha);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 .navegacao .marca-lateral, .navegacao .rodape-lateral { display: none; }
@@ -102,7 +129,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 }
 .aba svg { width: 22px; height: 22px; transition: transform .2s ease; }
 .aba[aria-current="page"] { color: var(--marca); font-weight: 700; }
-.aba[aria-current="page"] svg { transform: translateY(-1px) scale(1.08); }
+.aba[aria-current="page"] svg { transform: translateY(-1px) scale(1.08); filter: drop-shadow(0 0 var(--glow) var(--marca)); }
 .principal {
   min-width: 0; width: 100%; max-width: 1180px; margin: 0 auto;
   padding-block: 12px calc(var(--barra-h) + 96px + env(safe-area-inset-bottom, 0px));
@@ -131,26 +158,55 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .icone-btn svg { width: 21px; height: 21px; }
 
 .vista { display: grid; gap: 14px; }
-.vista.anima { animation: entra .28s ease both; }
-@keyframes entra { from { opacity: .001; transform: translateY(8px); } }
+/* Ao abrir uma tela, os blocos sobem um após o outro e a lista entra em cascata. */
+.anima :is(.exemplo-faixa, .heroi, .alerta, .cartao) {
+  animation: aparece .6s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 70ms);
+}
+.anima .linha-item { animation: aparece-linha .45s ease both; animation-delay: calc(160ms + var(--j, 14) * 28ms); }
+@keyframes aparece { from { opacity: .001; transform: translateY(16px) scale(.985); } }
+@keyframes aparece-linha { from { opacity: .001; transform: translateX(-8px); } }
+/* No computador, o cartão acende a borda sob o mouse. */
+@media (hover: hover) {
+  .cartao { transition: border-color .25s, box-shadow .25s; }
+  .cartao:hover { border-color: color-mix(in srgb, var(--marca) 28%, var(--linha)); }
+}
 .colunas { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .pilha { display: grid; gap: 14px; min-width: 0; }
 
-.cartao { background: var(--superficie); border-radius: var(--raio); padding: 16px; box-shadow: var(--sombra); min-width: 0; }
+.cartao { background: var(--cartao-fundo); border: 1px solid var(--linha); border-radius: var(--raio); padding: 16px; box-shadow: var(--sombra); min-width: 0; }
+/* Títulos dos cartões no estilo de painel: caixa alta, espaçados, com um ponto aceso. */
+.cartao h2 { font: 700 12.5px/1.3 var(--texto); letter-spacing: .09em; text-transform: uppercase; color: var(--tinta-2); }
+.cartao h2::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; vertical-align: 1px; border-radius: 50%;
+  background: var(--marca); box-shadow: 0 0 var(--glow) var(--marca);
+}
 .cartao-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .cartao-topo > div { min-width: 0; }
 .nota { font-size: 13px; color: var(--tinta-2); }
 
 /* ---------- saldo principal ---------- */
-.heroi { background: var(--marca); color: var(--sobre-marca); border-radius: 20px; padding: 18px; position: relative; overflow: hidden; }
+.heroi {
+  color: var(--heroi-tinta); border-radius: 22px; padding: 18px; position: relative; overflow: hidden; isolation: isolate;
+  background: linear-gradient(135deg, var(--heroi-a) 0%, var(--heroi-b) 78%);
+  border: 1px solid var(--heroi-borda);
+  box-shadow: 0 24px 60px -28px color-mix(in srgb, var(--heroi-acento) 45%, transparent), var(--sombra);
+}
 .heroi::after {
-  /* pauta do livro-caixa */
-  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .09;
-  background: repeating-linear-gradient(to bottom, transparent 0 27px, currentColor 27px 28px);
+  /* grade de pontos, como num painel */
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .07; z-index: -1;
+  background-image: radial-gradient(currentColor 1px, transparent 1.4px); background-size: 18px 18px;
 }
 .heroi > * { position: relative; z-index: 1; }
+.heroi > .heroi-faisca {
+  position: absolute; z-index: 0; top: 8px; right: 0; width: min(62%, 560px); height: 150px; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 35%); mask-image: linear-gradient(to right, transparent, #000 35%);
+}
+.heroi-faisca svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .heroi-rotulo { font-size: 14px; font-weight: 500; opacity: .9; }
-.heroi-valor { font: 700 clamp(38px, 11vw, 56px)/1.08 var(--titulo); letter-spacing: -.025em; margin: 2px 0 6px; overflow-wrap: anywhere; }
+.heroi-valor {
+  font: 700 clamp(38px, 11vw, 58px)/1.08 var(--titulo); letter-spacing: -.025em; margin: 2px 0 6px; overflow-wrap: anywhere;
+  text-shadow: 0 0 calc(var(--glow) * 4) color-mix(in srgb, var(--heroi-acento) 40%, transparent);
+}
 .heroi-sub { font-size: 14px; opacity: .92; }
 /* O saldo inteiro é o botão que abre o detalhe do cálculo. */
 .heroi-saldo { display: grid; justify-items: start; max-width: 100%; text-align: left; border-radius: 12px; }
@@ -159,7 +215,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .heroi-saldo:hover svg { transform: translateX(2px); opacity: 1; }
 .heroi-saldo .heroi-valor { display: block; }
 .numero .mini { height: 4px; margin: 7px 0 5px; border-radius: 2px; background: color-mix(in srgb, currentColor 22%, transparent); overflow: hidden; }
-.numero .mini span { display: block; height: 100%; border-radius: 2px; background: currentColor; }
+.numero .mini span { display: block; height: 100%; border-radius: 2px; background: var(--heroi-acento); box-shadow: 0 0 var(--glow) var(--heroi-acento); transform-origin: left; }
+.anima .numero .mini span { animation: enche .9s cubic-bezier(.2, .8, .2, 1) .35s both; }
 .numero .mini.sem-barra { background: none; }
 .numero small.detalhe { font-size: 11.5px; opacity: .85; overflow-wrap: anywhere; }
 .composicao { display: grid; margin: 0; }
@@ -172,7 +229,11 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .composicao .total dd { font-weight: 700; }
 
 .numeros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
-.numero { min-width: 0; padding-top: 10px; border-top: 1px solid color-mix(in srgb, currentColor 30%, transparent); }
+.numero {
+  min-width: 0; padding: 10px 12px; border-radius: 14px;
+  background: color-mix(in srgb, currentColor 6%, transparent); border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
 .numero small { display: block; font-size: 12px; opacity: .88; }
 .numero strong { display: block; font-size: clamp(13px, 3.6vw, 17px); font-weight: 700; overflow-wrap: anywhere; }
 
@@ -180,7 +241,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .seg { display: inline-flex; padding: 3px; background: var(--superficie-2); border: 1px solid var(--linha); border-radius: 12px; max-width: 100%; }
 .seg button { min-height: 34px; padding: 4px 12px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--tinta-2); transition: background .15s, color .15s; white-space: nowrap; }
 .seg button[aria-pressed="true"] { background: var(--superficie); color: var(--tinta); font-weight: 700; box-shadow: 0 1px 3px rgb(0 0 0 / .14); }
-.seletor-area button[aria-pressed="true"] { background: var(--marca); color: var(--sobre-marca); }
+.seletor-area button[aria-pressed="true"] { background: var(--marca); color: var(--sobre-marca); box-shadow: 0 0 calc(var(--glow) * 2) color-mix(in srgb, var(--marca) 45%, transparent); }
 .seg.largo { display: flex; width: 100%; }
 .seg.largo button { flex: 1 1 0; min-width: 0; padding-inline: 6px; white-space: normal; line-height: 1.15; }
 .seg.saida button[aria-pressed="true"] { color: var(--neg); }
@@ -190,7 +251,10 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   border-radius: 12px; font-weight: 600; background: var(--superficie-2); border: 1px solid var(--linha); transition: transform .1s;
 }
 .btn:active { transform: scale(.98); }
-.btn.primario { background: var(--marca); color: var(--sobre-marca); border-color: transparent; }
+.btn.primario {
+  background: linear-gradient(135deg, var(--marca), color-mix(in srgb, var(--marca) 72%, #000)); color: var(--sobre-marca); border-color: transparent;
+  box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--marca) 70%, transparent);
+}
 .btn.perigo { color: var(--neg); }
 .btn.sem-borda { background: transparent; border-color: transparent; }
 .link { color: var(--marca); font-weight: 600; font-size: 13px; min-height: 32px; text-decoration: underline; text-underline-offset: 3px; }
@@ -257,11 +321,14 @@ input:focus, select:focus { outline: 2px solid var(--marca); outline-offset: 0; 
 .barra-info { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
 .barra-info span:first-child { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 .trilho { position: relative; height: 8px; border-radius: 99px; background: var(--superficie-2); box-shadow: inset 0 0 0 1px var(--linha); }
-.enche { display: block; height: 100%; border-radius: 99px; background: var(--s1); transform-origin: left; }
+.enche {
+  --c: var(--s1); display: block; height: 100%; border-radius: 99px; transform-origin: left;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 45%, transparent), var(--c)); box-shadow: 0 0 var(--glow) color-mix(in srgb, var(--c) 70%, transparent);
+}
 .anima .enche { animation: enche .7s cubic-bezier(.2, .8, .2, 1) both; }
-.enche.aviso { background: #fab219; }
-.enche.critico { background: #d03b3b; }
-.enche.meta { background: var(--marca); }
+.enche.aviso { --c: #fab219; }
+.enche.critico { --c: #e5484d; }
+.enche.meta { --c: var(--marca); }
 @keyframes enche { from { transform: scaleX(0); } }
 
 /* ---------- gráficos ---------- */
@@ -274,15 +341,25 @@ input:focus, select:focus { outline: 2px solid var(--marca); outline-offset: 0; 
 .plot { position: relative; touch-action: pan-y; }
 .plot svg { display: block; width: 100%; height: auto; overflow: visible; }
 .plot svg text { fill: var(--tinta-3); font: 500 11px var(--texto); font-variant-numeric: tabular-nums; }
-.plot .grade { stroke: var(--linha); stroke-width: 1; }
+.plot .grade { stroke: var(--linha); stroke-width: 1; stroke-dasharray: 2 4; }
 .plot .zero { stroke: var(--base); stroke-width: 1; }
+.plot .linha-hoje { stroke-dasharray: 3 3; }
+.brilha { filter: drop-shadow(0 0 var(--glow) var(--c)); }
+.brilha-barra { filter: drop-shadow(0 0 calc(var(--glow) * .7) color-mix(in srgb, var(--c) 60%, transparent)); }
+.aceso .halo { opacity: .25; transform-box: fill-box; transform-origin: center; animation: halo 2.4s ease-out infinite; }
+.desenha { stroke-dasharray: 1; stroke-dashoffset: 1; animation: desenha 1.3s cubic-bezier(.4, 0, .2, 1) .25s forwards; }
+@keyframes desenha { to { stroke-dashoffset: 0; } }
+.surge { animation: surge .7s ease var(--atraso, 0s) both; }
+@keyframes surge { from { opacity: 0; } }
+@keyframes halo { 0% { transform: scale(.6); opacity: .45; } 70%, 100% { transform: scale(1.6); opacity: 0; } }
 .plot .cruz { stroke: var(--tinta-3); stroke-width: 1; }
 .plot .faixa { fill: var(--tinta); opacity: .05; }
 .plot .cresce { transform-box: fill-box; transform-origin: bottom; animation: cresce .55s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes cresce { from { transform: scaleY(0); } }
 .dica {
   position: absolute; top: 0; left: 0; z-index: 5; pointer-events: none; min-width: 150px; padding: 8px 10px; border-radius: 10px;
-  background: var(--superficie); box-shadow: var(--sombra-forte); border: 1px solid var(--linha); font-size: 12.5px;
+  background: color-mix(in srgb, var(--superficie) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: var(--sombra-forte); border: 1px solid var(--linha); font-size: 12.5px;
 }
 .dica b { display: block; margin-bottom: 3px; }
 .dica div { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
@@ -305,7 +382,8 @@ th { color: var(--tinta-2); font-weight: 600; }
   position: fixed; z-index: 21; right: max(16px, env(safe-area-inset-right, 0px));
   bottom: calc(var(--barra-h) + 14px + env(safe-area-inset-bottom, 0px));
   display: inline-flex; align-items: center; gap: 8px; height: 54px; padding: 0 20px 0 16px; border-radius: 18px;
-  background: var(--marca); color: var(--sobre-marca); font-weight: 700; box-shadow: var(--sombra-forte); transition: transform .15s;
+  background: linear-gradient(135deg, var(--marca), color-mix(in srgb, var(--marca) 72%, #000)); color: var(--sobre-marca); font-weight: 700;
+  box-shadow: 0 14px 34px -10px color-mix(in srgb, var(--marca) 65%, transparent), var(--sombra-forte); transition: transform .15s;
 }
 .fab svg { width: 22px; height: 22px; }
 .fab:hover { transform: translateY(-2px); }
@@ -351,6 +429,11 @@ dialog#folha::backdrop { background: rgb(5 15 12 / .5); animation: escurece .2s 
   .btn.leve span { display: none; }
   .btn.leve { width: 40px; padding: 0; }
 }
+@media (max-width: 640px) {
+  .heroi > .heroi-faisca { width: 100%; height: 120px; opacity: .55; }
+  .numero { padding: 9px 10px; }
+  .so-largo { display: none; }
+}
 @media (max-width: 480px) {
   /* No celular o selo vira só o ponto colorido; o texto completo fica em Ajustes. */
   .selo-sinc { width: 24px; padding: 0; justify-content: center; border: 0; background: none; }
@@ -366,19 +449,20 @@ dialog#folha::backdrop { background: rgb(5 15 12 / .5); animation: escurece .2s 
   .moldura { grid-template-columns: 216px minmax(0, 1fr); }
   .navegacao {
     position: sticky; top: 0; inset: auto; height: 100dvh; display: flex; flex-direction: column; gap: 4px; padding: 20px 12px;
-    border-top: 0; border-right: 1px solid var(--linha); background: var(--superficie);
+    border-top: 0; border-right: 1px solid var(--linha); background: color-mix(in srgb, var(--superficie) 70%, transparent);
   }
   .navegacao .marca-lateral { display: block; font: 700 21px var(--titulo); padding: 0 12px 16px; color: var(--marca); letter-spacing: -.01em; }
   .navegacao .rodape-lateral { display: grid; gap: 4px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--linha); }
   .so-celular { display: none; }
   .aba { flex-direction: row; justify-content: flex-start; gap: 12px; height: 46px; padding: 0 12px; font-size: 14.5px; border-radius: 12px; }
   .aba:hover { background: var(--superficie-2); }
-  .aba[aria-current="page"] { background: var(--marca-suave); }
+  .aba[aria-current="page"] { background: var(--marca-suave); box-shadow: inset 3px 0 0 var(--marca); }
   .principal { padding: 22px 28px 48px; }
   .colunas { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
   .fab { right: 28px; bottom: 28px; }
   #avisos { bottom: 96px; }
-  .heroi { padding: 24px; }
+  .heroi { padding: 26px; }
+  .heroi > .heroi-faisca { height: 170px; top: 12px; }
   .cartao { padding: 20px; }
   dialog#folha { margin: auto; width: 520px; border-radius: 22px; }
   .folha-corpo { padding: 22px; }
@@ -386,4 +470,6 @@ dialog#folha::backdrop { background: rgb(5 15 12 / .5); animation: escurece .2s 
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; transition-duration: .01ms !important; }
+  /* Animações contínuas ficam paradas: com duração mínima, elas piscariam. */
+  body::before, .aceso .halo { animation: none !important; }
 }

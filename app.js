@@ -324,6 +324,10 @@
       <button type="button" class="fab" data-acao="novo">${icone('mais')}<span>Lançar</span></button>
     </div>`;
     pintarSelo();
+    if (animar) {
+      $$('#vista .exemplo-faixa, #vista .heroi, #vista .alerta, #vista .cartao').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 10)));
+      $$('#vista .linha-item').slice(0, 14).forEach((el, i) => el.style.setProperty('--j', i));
+    }
     montar[ui.vista] && montar[ui.vista](animar);
   }
 
@@ -582,7 +586,7 @@
     const compacto = (v) => reais(v, { compacto: true });
     const numero = (rotulo, total, feito, textoFeito) => {
       const pct = total > 0 ? Math.min(100, Math.round((feito / total) * 100)) : 0;
-      return `<div class="numero"><small>${rotulo}</small><strong>${compacto(total)}</strong>
+      return `<div class="numero"><small>${rotulo}</small><strong data-valor="${total}">${compacto(total)}</strong>
         <div class="mini" aria-hidden="true"><span style="width:${pct}%"></span></div>
         <small class="detalhe" title="${compacto(feito)} ${textoFeito}">${pct}% ${textoFeito}</small></div>`;
     };
@@ -591,16 +595,17 @@
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
     return `
       <section class="heroi" aria-label="Resumo">
+        <div class="heroi-faisca" id="heroi-faisca" aria-hidden="true"></div>
         <button type="button" class="heroi-saldo" data-acao="ver-saldo" title="Ver como o saldo é calculado">
           <span class="heroi-rotulo">${ui.area === 'conjunta' ? 'Saldo conjunto hoje' : 'Seu saldo hoje'}${ui.grupo !== 'Tudo' ? ' · ' + esc(ui.grupo) : ''}${icone('direita')}</span>
           <span class="heroi-valor" id="saldo-heroi">${reais(Fin.saldoHoje(estado, h, ui.grupo))}</span>
         </button>
         <div class="heroi-sub">Previsão para o fim de ${esc(mesNome)}: <b>${reais(fimMes.saldo)}</b></div>
         <div class="numeros">
-          ${numero('Entradas do mês', r.entradasCertas, r.entrou, 'já entrou')}
-          ${numero('Saídas do mês', r.saidas, r.saiu, 'já saiu')}
-          <div class="numero"><small>Sobra do mês</small><strong>${compacto(r.sobra)}</strong>
-            <div class="mini sem-barra" aria-hidden="true"></div><small class="detalhe">entradas − saídas</small></div>
+          ${numero('Entradas<span class="so-largo"> do mês</span>', r.entradasCertas, r.entrou, 'entrou')}
+          ${numero('Saídas<span class="so-largo"> do mês</span>', r.saidas, r.saiu, 'saiu')}
+          <div class="numero"><small>Sobra<span class="so-largo"> do mês</span></small><strong data-valor="${r.sobra}">${compacto(r.sobra)}</strong>
+            <div class="mini sem-barra" aria-hidden="true"></div><small class="detalhe">prevista</small></div>
         </div>
       </section>
       ${alertas.length ? `<div class="pilha">${alertas.map((a) => `<div class="alerta ${a.nivel === 'critico' ? 'critico' : ''}">${icone('alerta')}<div><b>${esc(a.titulo)}</b><span>${esc(a.texto)}</span></div></div>`).join('')}</div>` : ''}
@@ -642,7 +647,12 @@
 
   montar.inicio = (animar) => {
     const saldo = Fin.saldoHoje(estado, hoje(), ui.grupo);
-    if (animar) Graficos.contar($('#saldo-heroi'), saldo, (v) => reais(v));
+    if (animar) {
+      Graficos.contar($('#saldo-heroi'), saldo, (v) => reais(v));
+      $$('.numero strong[data-valor]').forEach((el) => Graficos.contar(el, Number(el.dataset.valor), (v) => reais(v, { compacto: true }), 900));
+    }
+    const linhaTopo = dadosSaldo(6);
+    Graficos.faisca($('#heroi-faisca'), linhaTopo.real.map((v, i) => (v != null ? v : linhaTopo.projCertas[i])), linhaTopo.indiceHoje, animar);
     const d = graficoSaldo($('#grafico-saldo'), ui.faixa, animar);
     const m = d.certas.menor;
     const inclui = [];
@@ -1387,7 +1397,7 @@
     caixa.className = 'pdf-render';
     document.body.appendChild(caixa);
     try {
-      Graficos[tipo](caixa, { ...cfg, animar: false });
+      Graficos[tipo](caixa, { ...cfg, animar: false, pdf: true });
       const imagem = await Graficos.paraImagem(caixa);
       const tokens = getComputedStyle(caixa);
       const series = cfg.series.map((s) => ({
