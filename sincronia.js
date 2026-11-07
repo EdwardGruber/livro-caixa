@@ -58,7 +58,38 @@
     return corpo;
   }
 
-  const api = { aplicarRemotos, montarMudancas, limparEnviados, trocarComPlanilha };
+  /* Este aparelho tem dados próprios, a planilha também, e não há registro em comum: não são
+     a mesma história. Juntar misturaria as finanças de quem começou em separado. */
+  function conflitoAoConectar(estado, registros) {
+    const lista = registros || [];
+    const proprios = [];
+    Object.keys(estado).forEach((colecao) => {
+      Object.values(estado[colecao]).forEach((r) => { if (r.atualizadoEm > 1) proprios.push([colecao, r]); });
+    });
+    if (!proprios.length || !lista.some((r) => !r.dados.excluido)) return false;
+    const naPlanilha = new Map(lista.map((r) => [r.colecao + '|' + r.id, r.atualizadoEm]));
+    return !proprios.some(([colecao, r]) => naPlanilha.get(colecao + '|' + r.id) === r.atualizadoEm);
+  }
+
+  /* O backup vence: excluído ou alterado depois volta a ser como era, em todos os aparelhos.
+     O que foi criado depois do backup não é tocado. */
+  function restaurarBackup(estado, backup, pendentes, agora) {
+    let total = 0;
+    const semData = ({ atualizadoEm, ...resto }) => JSON.stringify(resto);
+    Object.keys(estado).forEach((colecao) => {
+      Object.values((backup && backup[colecao]) || {}).forEach((r) => {
+        if (!r || !r.id) return;
+        const atual = estado[colecao][r.id];
+        if (atual && semData(atual) === semData(r)) return;
+        estado[colecao][r.id] = { ...r, atualizadoEm: Math.max(agora, ((atual && atual.atualizadoEm) || 0) + 1) };
+        if (pendentes) pendentes[colecao + '|' + r.id] = 1;
+        total += 1;
+      });
+    });
+    return total;
+  }
+
+  const api = { aplicarRemotos, montarMudancas, limparEnviados, trocarComPlanilha, conflitoAoConectar, restaurarBackup };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Sincronia = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

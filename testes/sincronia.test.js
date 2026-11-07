@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const Sincronia = require('../sincronia.js');
+const Fin = require('../logica.js');
 
 function criarServidor() {
   const linhas = [];
@@ -42,7 +43,7 @@ function criarServidor() {
 function aparelho(servidor) {
   const a = { estado: { lancamentos: {}, contas: {} }, pendentes: {}, desde: 0 };
   a.grava = (colecao, id, dados, quando) => {
-    a.estado[colecao][id] = { id, atualizadoEm: quando, ...dados };
+    a.estado[colecao][id] = { id, ...dados, atualizadoEm: quando };
     a.pendentes[colecao + '|' + id] = 1;
   };
   a.sincroniza = async () => {
@@ -124,4 +125,111 @@ test('registro editado durante o envio continua na fila', () => {
   const pendentes = { 'lancamentos|a': 1 };
   Sincronia.limparEnviados(pendentes, [{ colecao: 'lancamentos', id: 'a', atualizadoEm: 10 }], estado);
   assert.ok(pendentes['lancamentos|a']);
+});
+
+function aparelhoComFixoNoCartao(servidor) {
+  const a = aparelho(servidor);
+  a.estado = Fin.estadoPadrao();
+  a.estado.contas.c1 = { id: 'c1', nome: 'Cartão', tipo: 'cartao', grupo: 'Pessoal', fechamento: 25, vencimento: 5, area: 'p1', atualizadoEm: 5 };
+  a.estado.recorrentes.r1 = { id: 'r1', tipo: 'despesa', descricao: 'Streaming', valor: 5590, inicio: '2026-11-18', categoriaId: 'x', contaId: 'c1', certeza: 'certa', pulados: [], area: 'p1', atualizadoEm: 5 };
+  a.confirmaFixos = () => {
+    Fin.fixosDoCartaoVencidos(Fin.visaoDaArea(a.estado, 'p1'), '2026-11-20', 'p1').forEach((reg) => {
+      if (a.estado.lancamentos[reg.id]) return;
+      a.estado.lancamentos[reg.id] = reg;
+      a.pendentes['lancamentos|' + reg.id] = 1;
+    });
+  };
+  return a;
+}
+
+test('fixo no cartão recriado por outro aparelho não desfaz edição nem exclusão', async () => {
+  const s = criarServidor();
+  const cel = aparelhoComFixoNoCartao(s);
+  const pc = aparelhoComFixoNoCartao(s);
+  const id = 'rc-r1-2026-11';
+
+  cel.confirmaFixos();
+  cel.grava('lancamentos', id, { ...cel.estado.lancamentos[id], valor: 5990 }, 1000);
+  await cel.sincroniza();
+
+  pc.confirmaFixos(); // abre antes de sincronizar e cria a própria cópia
+  await pc.sincroniza();
+  await cel.sincroniza();
+  assert.equal(pc.estado.lancamentos[id].valor, 5990);
+  assert.equal(cel.estado.lancamentos[id].valor, 5990);
+
+  cel.grava('lancamentos', id, { ...cel.estado.lancamentos[id], excluido: true }, 2000);
+  await cel.sincroniza();
+  const outro = aparelhoComFixoNoCartao(s);
+  outro.confirmaFixos();
+  await outro.sincroniza();
+  await cel.sincroniza();
+  assert.equal(outro.estado.lancamentos[id].excluido, true);
+  assert.equal(cel.estado.lancamentos[id].excluido, true);
+});
+
+test('fixo no cartão criado pelo app ainda chega aos outros aparelhos', async () => {
+  const s = criarServidor();
+  const pc = aparelhoComFixoNoCartao(s);
+  const cel = aparelho(s);
+  cel.estado = Fin.estadoPadrao();
+  pc.confirmaFixos();
+  await pc.sincroniza();
+  await cel.sincroniza();
+  assert.equal(cel.estado.lancamentos['rc-r1-2026-11'].valor, 5590);
+});
+
+test('conectar: aparelho que começou em separado é barrado, sem enviar nada', async () => {
+  const s = criarServidor();
+  const ele = aparelho(s);
+  ele.estado = Fin.estadoPadrao();
+  ele.grava('perfis', 'p1', { nome: 'Ele' }, 100);
+  ele.grava('contas', 'ct-banco', { ...ele.estado.contas['ct-banco'], saldoInicial: 500000 }, 100);
+  await ele.sincroniza();
+  const linhasAntes = s.linhas.length;
+  const le = () => Sincronia.trocarComPlanilha({ url: 'x', chave: s.chave, desde: 0, mudancas: [], buscar: s.buscar });
+  const naPlanilha = (await le()).registros;
+  assert.equal(s.linhas.length, linhasAntes);
+
+  const ela = Fin.estadoPadrao();
+  ela.perfis.p1 = { id: 'p1', nome: 'Ela', atualizadoEm: 200 };
+  assert.equal(Sincronia.conflitoAoConectar(ela, naPlanilha), true);
+  // Aparelho novo, sem nada próprio.
+  assert.equal(Sincronia.conflitoAoConectar(Fin.estadoPadrao(), naPlanilha), false);
+  // Primeiro aparelho, planilha vazia.
+  assert.equal(Sincronia.conflitoAoConectar(ela, []), false);
+  // Mesmo aparelho reconectando, inclusive com algo novo ainda não enviado.
+  ele.estado.lancamentos.novo = { id: 'novo', atualizadoEm: 300 };
+  assert.equal(Sincronia.conflitoAoConectar(ele.estado, naPlanilha), false);
+  // Planilha só com exclusões não tem o que proteger.
+  assert.equal(Sincronia.conflitoAoConectar(ela, [{ colecao: 'lancamentos', id: 'z', atualizadoEm: 5, dados: { excluido: true } }]), false);
+});
+
+test('restaurar backup desfaz exclusão e edição, nos outros aparelhos também', async () => {
+  const s = criarServidor();
+  const pc = aparelho(s);
+  const cel = aparelho(s);
+  pc.grava('lancamentos', 'a', { valor: 100 }, 10);
+  pc.grava('lancamentos', 'b', { valor: 200 }, 10);
+  await pc.sincroniza();
+  await cel.sincroniza();
+  const backup = JSON.parse(JSON.stringify(pc.estado));
+
+  pc.grava('lancamentos', 'a', { valor: 100, excluido: true }, 20);
+  pc.grava('lancamentos', 'b', { valor: 999 }, 20);
+  pc.grava('lancamentos', 'c', { valor: 300 }, 20);
+  await pc.sincroniza();
+  await cel.sincroniza();
+
+  const total = Sincronia.restaurarBackup(pc.estado, backup, pc.pendentes, 1000);
+  assert.equal(total, 2);
+  assert.equal(pc.estado.lancamentos.a.excluido, undefined);
+  assert.equal(pc.estado.lancamentos.b.valor, 200);
+  assert.equal(pc.estado.lancamentos.c.valor, 300);
+  await pc.sincroniza();
+  await cel.sincroniza();
+  assert.equal(cel.estado.lancamentos.a.excluido, undefined);
+  assert.equal(cel.estado.lancamentos.b.valor, 200);
+  assert.equal(cel.estado.lancamentos.c.valor, 300);
+  assert.equal(Sincronia.restaurarBackup(pc.estado, backup, pc.pendentes, 2000), 0);
 });

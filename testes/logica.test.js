@@ -207,7 +207,7 @@ test('próximos agrupa o cartão em uma fatura e marca o que venceu', () => {
 });
 
 test('previsão de meta', () => {
-  assert.deepEqual(Fin.previsaoMeta({ alvo: 300000, guardado: 100000, aporte: 50000 }, HOJE), { falta: 200000, meses: 4, data: '2027-03', pronta: false });
+  assert.deepEqual(Fin.previsaoMeta({ alvo: 300000, guardado: 100000, aporte: 50000 }, HOJE), { falta: 200000, meses: 4, data: '2027-02', pronta: false, feitoEsteMes: false });
   assert.equal(Fin.previsaoMeta({ alvo: 100, guardado: 100 }, HOJE).pronta, true);
   assert.equal(Fin.previsaoMeta({ alvo: 100, guardado: 0 }, HOJE).meses, null);
 });
@@ -270,4 +270,151 @@ test('alertas avisam saldo negativo e limite estourado', () => {
   const a = Fin.alertas(e, HOJE);
   assert.ok(a.some((x) => x.titulo.includes('negativo')));
   assert.ok(a.some((x) => x.titulo.includes('Lazer')));
+});
+
+test('alerta de saldo negativo cita o primeiro mês negativo, não o do menor saldo', () => {
+  const e = base();
+  e.config.geral.variavelManual = 0;
+  e.recorrentes.r = { id: 'r', tipo: 'despesa', descricao: 'Aluguel', valor: 100000, inicio: '2026-11-25', categoriaId: 'x', contaId: 'ct-banco', certeza: 'certa', atualizadoEm: 2 };
+  const p = Fin.projetar(e, '2026-11-20', 12);
+  assert.equal(p.primeiroNegativo, '2026-12-25');
+  assert.equal(p.menor.data.slice(0, 7), '2027-11');
+  const alerta = Fin.alertas(e, '2026-11-20')[0];
+  assert.equal(alerta.titulo, 'O saldo fica negativo em dez/26');
+  assert.match(alerta.texto, /25\/12\/2026/);
+});
+
+test('saldo informado com data: o que veio antes já está nele, o que vem depois muda', () => {
+  const e = base();
+  e.contas['ct-banco'].saldoData = '2026-11-06';
+  const inicial = Fin.saldoHoje(e, '2026-11-20', 'Pessoal');
+  Fin.criarParcelas({ tipo: 'despesa', descricao: 'TV', valor: 500000, data: '2026-05-10', categoriaId: 'x', contaId: 'visa', certeza: 'certa' }, 10, novoId, 2).forEach((l) => { e.lancamentos[l.id] = l; });
+  lanc(e, { valor: 20000, data: '2026-11-01' });
+  assert.equal(Fin.saldoHoje(e, '2026-11-20', 'Pessoal'), inicial);
+  lanc(e, { valor: 3000, data: '2026-11-06' });
+  lanc(e, { valor: 4000, data: '2026-11-15' });
+  assert.equal(Fin.saldoHoje(e, '2026-11-20', 'Pessoal'), inicial - 7000);
+  // A parcela que vence depois da data do saldo pesa normalmente.
+  assert.equal(Fin.saldoHoje(e, '2027-01-06', 'Pessoal'), inicial - 7000 - 50000 * 2);
+});
+
+test('histórico reconstrói o passado mesmo com lançamentos anteriores à data do saldo', () => {
+  const e = Fin.estadoPadrao();
+  e.contas['ct-banco'].saldoInicial = 100000;
+  e.contas['ct-banco'].saldoData = '2026-11-06';
+  lanc(e, { valor: 20000, data: '2026-10-15' });
+  const h = Fin.historicoSaldo(e, '2026-11-20', 2);
+  assert.equal(Fin.saldoHoje(e, '2026-11-20'), 100000);
+  assert.equal(h.find((x) => x.mes === '2026-10').saldo, 100000);
+  assert.equal(h.find((x) => x.mes === '2026-09').saldo, 120000);
+});
+
+test('migração da data do saldo não muda o saldo que a conta já mostrava', () => {
+  const e = base();
+  e.contas['ct-banco'].atualizadoEm = new Date(2026, 10, 6, 12).getTime();
+  lanc(e, { valor: 5000, data: '2026-10-20' });
+  lanc(e, { valor: 3000, data: '2026-09-10', contaId: 'visa' });
+  lanc(e, { valor: 1000, data: '2026-11-10' });
+  const antes = Fin.saldoHoje(e, '2026-11-20', 'Pessoal');
+  e.contas['ct-banco'].saldoData = Fin.dataDoSaldoAntigo(e, e.contas['ct-banco'], '2026-11-20');
+  assert.equal(e.contas['ct-banco'].saldoData, '2026-10-05');
+  assert.equal(Fin.saldoHoje(e, '2026-11-20', 'Pessoal'), antes);
+});
+
+test('conta paga agora entra no saldo, mesmo com vencimento anterior à data do saldo', () => {
+  const e = base();
+  e.contas['ct-banco'].saldoData = '2026-11-06';
+  const item = { contaId: 'ct-banco', data: '2026-11-05' };
+  assert.equal(Fin.dataDoPagamento(e, item), '2026-11-06');
+  assert.equal(Fin.dataDoPagamento(e, { contaId: 'ct-banco', data: '2026-11-08' }), '2026-11-08');
+  assert.equal(Fin.dataDoPagamento(e, { contaId: 'visa', data: '2026-09-01' }), '2026-09-01');
+});
+
+test('fatura sai da conta que paga, e as contas somam o saldo total', () => {
+  const e = base();
+  e.contas.outra = { id: 'outra', nome: 'Outra', tipo: 'banco', grupo: 'Pessoal', saldoInicial: 20000, atualizadoEm: 1 };
+  lanc(e, { valor: 60000, data: '2026-09-10', contaId: 'visa' });
+  const hoje = '2026-11-20';
+  const soma = () => Fin.vivos(e, 'contas').filter((c) => c.tipo !== 'cartao').reduce((s, c) => s + Fin.saldoConta(e, c, hoje), 0);
+  assert.equal(Fin.saldoConta(e, e.contas['ct-banco'], hoje), 100000 - 60000);
+  assert.equal(soma(), Fin.saldoHoje(e, hoje));
+  e.contas.visa.contaPagamento = 'outra';
+  assert.equal(Fin.saldoConta(e, e.contas['ct-banco'], hoje), 100000);
+  assert.equal(Fin.saldoConta(e, e.contas.outra, hoje), 20000 - 60000);
+  assert.equal(soma(), Fin.saldoHoje(e, hoje));
+});
+
+test('gasto fora do comum e dinheiro guardado não entram na estimativa', () => {
+  const e = base();
+  lanc(e, { valor: 100000, data: '2026-08-02' });
+  lanc(e, { valor: 100000, data: '2026-09-02' });
+  lanc(e, { valor: 100000, data: '2026-10-02' });
+  lanc(e, { valor: 500000, data: '2026-10-15', excepcional: true });
+  lanc(e, { valor: 700000, data: '2026-10-16', metaId: 'm' });
+  assert.equal(Fin.mediaVariavel(e, '2026-11-20').valor, 100000);
+});
+
+test('primeiro mês incompleto: proporcional com 15 dias ou mais, ignorado com menos', () => {
+  const pouco = base();
+  lanc(pouco, { valor: 20000, data: '2026-11-29' });
+  assert.equal(Fin.mediaVariavel(pouco, '2026-12-05').origem, 'sem-dados');
+
+  const metade = base();
+  lanc(metade, { valor: 60000, data: '2026-11-16' });
+  const m = Fin.mediaVariavel(metade, '2026-12-05');
+  assert.equal(m.origem, 'media');
+  assert.equal(m.valor, 120000);
+
+  const noMes = base();
+  lanc(noMes, { valor: 10000, data: '2026-11-11' });
+  assert.equal(Fin.mediaVariavel(noMes, '2026-11-15').origem, 'sem-dados');
+  assert.equal(Fin.mediaVariavel(noMes, '2026-11-20').valor, 30000);
+});
+
+test('entrada certa vencida gera alerta e aparece nos próximos; a provável, não', () => {
+  const e = base();
+  e.config.geral.variavelManual = 0;
+  e.recorrentes.s = { id: 's', tipo: 'receita', descricao: 'Salário', valor: 500000, inicio: '2026-11-05', categoriaId: 'x', contaId: 'ct-banco', certeza: 'certa', atualizadoEm: 2 };
+  lanc(e, { tipo: 'receita', valor: 900000, data: '2026-11-01', pago: false, certeza: 'provavel' });
+  const a = Fin.alertas(e, '2026-11-20');
+  assert.ok(a.some((x) => x.titulo === '1 entrada prevista sem confirmação'));
+  const p = Fin.proximos(e, '2026-11-20', 30, 'Tudo', { entradas: true });
+  assert.deepEqual(p.filter((i) => i.tipo === 'receita').map((i) => i.descricao), ['Salário', 'Salário']);
+  assert.equal(p[0].atrasado, true);
+  assert.equal(Fin.proximos(e, '2026-11-20', 30).length, 0);
+});
+
+test('meta: registrar em dia mantém a data, deixar passar adia', () => {
+  const e = base();
+  const meta = { id: 'm', nome: 'Reserva', alvo: 300000, guardado: 100000, aporte: 50000, contaId: 'ct-banco', atualizadoEm: 2 };
+  e.metas.m = meta;
+  assert.equal(Fin.previsaoMeta(meta, '2026-11-20', e).data, '2027-02');
+  lanc(e, { valor: 50000, data: '2026-11-20', metaId: 'm' });
+  assert.equal(Fin.previsaoMeta(meta, '2026-11-20', e).feitoEsteMes, true);
+  assert.equal(Fin.previsaoMeta(meta, '2026-11-20', e).data, '2027-02');
+  lanc(e, { valor: 50000, data: '2026-12-05', metaId: 'm' });
+  assert.equal(Fin.previsaoMeta(meta, '2026-12-20', e).data, '2027-02');
+  assert.equal(Fin.previsaoMeta(meta, '2027-02-20', e).data, '2027-03');
+});
+
+test('meta: dinheiro que sai da conta pesa na projeção até chegar ao alvo, e não vira gasto', () => {
+  const e = Fin.estadoPadrao();
+  e.config.geral.variavelManual = 0;
+  e.contas['ct-banco'].saldoInicial = 500000;
+  e.metas.m = { id: 'm', nome: 'Reserva', alvo: 250000, guardado: 100000, aporte: 100000, contaId: 'ct-banco', atualizadoEm: 2 };
+  const p = Fin.projetar(e, '2026-11-20', 12);
+  assert.equal(p.metasMensal, 100000);
+  assert.equal(p.finaisDeMes[0].saldo, 400000);
+  assert.equal(p.finaisDeMes[1].saldo, 350000);
+  assert.equal(p.saldoFinal, 350000);
+
+  lanc(e, { valor: 100000, data: '2026-11-20', metaId: 'm', categoriaId: 'meta' });
+  const r = Fin.resumoMes(e, '2026-11');
+  assert.equal(r.saidas, 0);
+  assert.equal(r.guardado, 100000);
+  assert.equal(Fin.saldoHoje(e, '2026-11-20'), 400000);
+  assert.equal(Fin.projetar(e, '2026-11-20', 12).saldoFinal, 350000);
+
+  e.metas.m.contaId = null;
+  assert.equal(Fin.projetar(e, '2026-11-20', 12).metasMensal, 0);
 });

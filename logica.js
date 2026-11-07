@@ -175,6 +175,39 @@
 
   const sinal = (item) => (item.tipo === 'receita' ? item.valor : -item.valor);
 
+  /* De onde sai a fatura: a conta escolhida no cartão; sem escolha, a principal do mesmo grupo. */
+  function contaPagadora(estado, cartao) {
+    const escolhida = cartao.contaPagamento && contaDe(estado, cartao.contaPagamento);
+    if (escolhida && !escolhida.excluido && escolhida.tipo !== 'cartao') return escolhida;
+    const candidatas = vivos(estado, 'contas').filter((c) => c.tipo !== 'cartao');
+    const doGrupo = candidatas.filter((c) => c.grupo === cartao.grupo);
+    const principal = (lista) => lista.find((c) => c.tipo === 'banco') || lista[0];
+    return principal(doGrupo) || principal(candidatas) || null;
+  }
+
+  /* A conta que o lançamento movimenta de verdade: no cartão, a que paga a fatura. */
+  function contaDoCaixa(estado, item) {
+    const conta = contaDe(estado, item.contaId);
+    return conta && conta.tipo === 'cartao' ? contaPagadora(estado, conta) : conta;
+  }
+
+  /* O saldo informado vale a partir de uma data: o que veio antes dela já está dentro dele. */
+  function dataDoSaldo(estado, item) {
+    const conta = contaDoCaixa(estado, item);
+    return (conta && conta.saldoData) || null;
+  }
+
+  function jaNoSaldo(estado, item) {
+    const corte = dataDoSaldo(estado, item);
+    return !!corte && dataCaixa(estado, item) < corte;
+  }
+
+  /* Conta em aberto paga agora saiu depois do saldo informado, mesmo com vencimento anterior. */
+  function dataDoPagamento(estado, item) {
+    const corte = dataDoSaldo(estado, item);
+    return !ehCartao(estado, item) && corte && item.data < corte ? corte : item.data;
+  }
+
   /* Já saiu (ou entrou) do caixa? No cartão isso acontece no vencimento da fatura. */
   function liquidado(estado, item, hoje) {
     if (item.virtual) return false;
@@ -209,6 +242,24 @@
     return saida;
   }
 
+  function realDaOcorrencia(o, extras = {}) {
+    return {
+      id: `rc-${o.recorrenteId}-${o.competencia}`, tipo: o.tipo, descricao: o.descricao, valor: o.valor,
+      categoriaId: o.categoriaId, contaId: o.contaId, data: o.data, certeza: 'certa', pago: true,
+      recorrenteId: o.recorrenteId, competencia: o.competencia, area: o.area, ...extras,
+    };
+  }
+
+  /* Criados pelo app, não por alguém: a data de edição mínima faz qualquer edição ou exclusão
+     feita em outro aparelho vencer, mesmo que este ainda não tenha sincronizado. */
+  const EDICAO_AUTOMATICA = 2;
+
+  function fixosDoCartaoVencidos(visao, hoje, area) {
+    return ocorrencias(visao, mesDe(hoje))
+      .filter((o) => o.data <= hoje && ehCartao(visao, o))
+      .map((o) => realDaOcorrencia(o, { area, atualizadoEm: EDICAO_AUTOMATICA }));
+  }
+
   function lancamentosReais(estado, grupo) {
     return vivos(estado, 'lancamentos').filter((l) => noGrupo(estado, l, grupo));
   }
@@ -227,7 +278,7 @@
       if (c.tipo !== 'cartao' && (!grupo || grupo === 'Tudo' || c.grupo === grupo)) total += c.saldoInicial || 0;
     });
     lancamentosReais(estado, grupo).forEach((l) => {
-      if (liquidado(estado, l, hoje)) total += sinal(l);
+      if (liquidado(estado, l, hoje) && !jaNoSaldo(estado, l)) total += sinal(l);
     });
     return total;
   }
@@ -235,13 +286,27 @@
   function saldoConta(estado, conta, hoje) {
     let total = conta.saldoInicial || 0;
     vivos(estado, 'lancamentos').forEach((l) => {
-      if (l.contaId === conta.id && liquidado(estado, l, hoje)) total += sinal(l);
+      const caixa = contaDoCaixa(estado, l);
+      if (caixa && caixa.id === conta.id && liquidado(estado, l, hoje) && !jaNoSaldo(estado, l)) total += sinal(l);
     });
     return total;
   }
 
+  /* Contas de antes da data do saldo: o saldo vale antes do primeiro movimento e da última edição. */
+  function dataDoSaldoAntigo(estado, conta, hoje) {
+    let menor = hojeLocal(new Date(conta.atualizadoEm));
+    vivos(estado, 'lancamentos').forEach((l) => {
+      const caixa = contaDoCaixa(estado, l);
+      if (caixa && caixa.id === conta.id && liquidado(estado, l, hoje)) {
+        const quando = dataCaixa(estado, l);
+        if (quando < menor) menor = quando;
+      }
+    });
+    return menor;
+  }
+
   /* ---------- gastos variáveis: o que não é fixo nem parcela ---------- */
-  const ehVariavel = (l) => l.tipo === 'despesa' && !l.recorrenteId && !l.parcelaGrupo && !l.planejado;
+  const ehVariavel = (l) => l.tipo === 'despesa' && !l.recorrenteId && !l.parcelaGrupo && !l.planejado && !l.excepcional && !l.metaId;
 
   function gastoVariavel(estado, ym, grupo) {
     return lancamentosReais(estado, grupo)
@@ -249,28 +314,47 @@
       .reduce((s, l) => s + l.valor, 0);
   }
 
-  /* Média dos últimos 3 meses completos com dados; sem isso, ritmo do mês atual a partir do dia 10. */
+  /* O primeiro mês só conta inteiro se os lançamentos começaram nos primeiros dias. Com pelo menos
+     15 dias, é proporcionalizado; com menos, é pouco para estimar. */
+  const DIA_MES_INTEIRO = 5;
+  const MINIMO_DIAS = 15;
+
+  function gastoDoPrimeiroMes(gasto, primeiraData) {
+    const [a, m, dia] = partes(primeiraData);
+    if (dia <= DIA_MES_INTEIRO) return gasto;
+    const total = diasNoMes(a, m);
+    const cobertos = total - dia + 1;
+    return cobertos >= MINIMO_DIAS ? Math.round((gasto * total) / cobertos) : null;
+  }
+
+  /* Média dos últimos 3 meses completos com dados; sem isso, ritmo do mês atual a partir de 10 dias. */
   function mediaVariavel(estado, hoje, grupo) {
     const manual = estado.config && estado.config.geral && estado.config.geral.variavelManual;
     if (manual != null && (!grupo || grupo === 'Tudo')) return { valor: manual, origem: 'manual', meses: 0 };
     const reais = lancamentosReais(estado, grupo).filter(ehVariavel);
     if (!reais.length) return { valor: 0, origem: 'sem-dados', meses: 0 };
-    const primeiroMes = reais.map((l) => mesDe(l.data)).sort()[0];
+    const primeiraData = reais.map((l) => l.data).sort()[0];
+    const primeiroMes = mesDe(primeiraData);
     const mesAtual = mesDe(hoje);
     const valores = [];
     for (let i = 1; i <= 3; i++) {
       const ym = somaMeses(mesAtual, -i);
       if (ym < primeiroMes) break;
-      valores.push(gastoVariavel(estado, ym, grupo));
+      const gasto = gastoVariavel(estado, ym, grupo);
+      const valor = ym === primeiroMes ? gastoDoPrimeiroMes(gasto, primeiraData) : gasto;
+      if (valor != null) valores.push(valor);
     }
     if (valores.length) {
       return { valor: Math.round(valores.reduce((a, b) => a + b, 0) / valores.length), origem: 'media', meses: valores.length };
     }
     const dia = partes(hoje)[2];
-    if (dia >= 10) {
+    const diaInicial = partes(primeiraData)[2];
+    const comecouNoMes = primeiroMes === mesAtual && diaInicial > DIA_MES_INTEIRO;
+    const dias = comecouNoMes ? dia - diaInicial + 1 : dia;
+    if (dias >= 10) {
       const [a, m] = partes(hoje);
       const noMes = gastoVariavel(estado, mesAtual, grupo);
-      return { valor: Math.round((noMes / dia) * diasNoMes(a, m)), origem: 'ritmo', meses: 0 };
+      return { valor: Math.round((noMes / dias) * diasNoMes(a, m)), origem: 'ritmo', meses: 0 };
     }
     return { valor: 0, origem: 'sem-dados', meses: 0 };
   }
@@ -314,6 +398,22 @@
     });
     fluxosSimulacao(sim, hoje, fim).forEach((f) => soma(f.data, f.valor));
 
+    // Metas cujo dinheiro sai da conta: o valor mensal pesa até a meta ser alcançada.
+    let metasMensal = 0;
+    vivos(estado, 'metas').forEach((meta) => {
+      if (!meta.contaId || !meta.aporte || !noGrupo(estado, meta, grupo)) return;
+      let falta = meta.alvo - guardadoMeta(estado, meta);
+      if (falta <= 0) return;
+      metasMensal += meta.aporte;
+      let ym = aporteDoMes(estado, meta, mesAtual) ? somaMeses(mesAtual, 1) : mesAtual;
+      while (falta > 0 && ym <= ultimoMes) {
+        const valor = Math.min(meta.aporte, falta);
+        soma(ym === mesAtual ? hoje : `${ym}-01`, -valor);
+        falta -= valor;
+        ym = somaMeses(ym, 1);
+      }
+    });
+
     const mediaV = variavel != null ? variavel : mediaVariavel(estado, hoje, grupo).valor;
     const [ah, mh, dh] = partes(hoje);
     const jaGasto = gastoVariavel(estado, mesAtual, grupo);
@@ -323,6 +423,7 @@
     let saldo = saldoHoje(estado, hoje, grupo);
     const finaisDeMes = [];
     let menor = { saldo: Infinity, data: hoje };
+    let primeiroNegativo = null;
     let acumulado = 0;
 
     for (let d = hoje; d <= fim; d = somaDias(d, 1)) {
@@ -334,9 +435,10 @@
       acumulado -= inteiro;
       saldo += (fluxo.get(d) || 0) - inteiro;
       if (saldo < menor.saldo) menor = { saldo, data: d };
+      if (saldo < 0 && !primeiroNegativo) primeiroNegativo = d;
       if (d === montaData(a, m, 31)) finaisDeMes.push({ mes: mesDe(d), saldo });
     }
-    return { finaisDeMes, menor, variavelMensal: mediaV, saldoFinal: saldo };
+    return { finaisDeMes, menor, primeiroNegativo, variavelMensal: mediaV, metasMensal, saldoFinal: saldo };
   }
 
   /* Reconstrói o saldo no fim dos meses passados a partir do que já foi liquidado. */
@@ -357,9 +459,12 @@
   /* ---------- resumo do mês, por data do lançamento ---------- */
   function resumoMes(estado, ym, grupo) {
     const itens = itensDoMes(estado, ym, grupo);
-    const r = { entradasCertas: 0, entradasProvaveis: 0, saidas: 0, porCategoria: {}, qtd: itens.length };
+    const r = { entradasCertas: 0, entradasProvaveis: 0, saidas: 0, guardado: 0, porCategoria: {}, qtd: itens.length };
     itens.forEach((i) => {
-      if (i.tipo === 'receita') {
+      if (i.metaId) {
+        // Dinheiro guardado sai do saldo, mas não é gasto.
+        r.guardado += i.valor;
+      } else if (i.tipo === 'receita') {
         if (i.certeza === 'provavel') r.entradasProvaveis += i.valor;
         else r.entradasCertas += i.valor;
       } else {
@@ -373,10 +478,10 @@
   }
 
   /* ---------- próximos vencimentos ---------- */
-  function proximos(estado, hoje, dias, grupo) {
+  function proximos(estado, hoje, dias, grupo, { entradas = false } = {}) {
     const limite = somaDias(hoje, dias);
     const itens = [...lancamentosReais(estado, grupo), ...ocorrencias(estado, mesDe(somaMeses(limite, 2)), grupo)]
-      .filter((i) => i.tipo === 'despesa' && !liquidado(estado, i, hoje));
+      .filter((i) => !liquidado(estado, i, hoje) && (i.tipo === 'despesa' || (entradas && i.certeza !== 'provavel' && !ehCartao(estado, i))));
     const faturas = new Map();
     const avulsos = [];
     itens.forEach((i) => {
@@ -431,12 +536,27 @@
   }
 
   /* ---------- metas ---------- */
-  function previsaoMeta(meta, hoje) {
-    const falta = Math.max(0, meta.alvo - (meta.guardado || 0));
-    if (falta === 0) return { falta, meses: 0, data: hoje, pronta: true };
-    if (!meta.aporte) return { falta, meses: null, data: null, pronta: false };
+  /* O que já foi guardado: o valor informado mais o que saiu da conta por esta meta. */
+  function guardadoMeta(estado, meta) {
+    return vivos(estado, 'lancamentos')
+      .filter((l) => l.metaId === meta.id)
+      .reduce((s, l) => s + l.valor, meta.guardado || 0);
+  }
+
+  function aporteDoMes(estado, meta, ym) {
+    return meta.ultimoAporte === ym || vivos(estado, 'lancamentos').some((l) => l.metaId === meta.id && mesDe(l.data) === ym);
+  }
+
+  /* Conta um valor por mês, a partir deste se ainda não foi guardado: registrar o valor
+     em dia mantém a data; deixar um mês passar sem guardar a adia. */
+  function previsaoMeta(meta, hoje, estado = {}) {
+    const mes = mesDe(hoje);
+    const falta = Math.max(0, meta.alvo - guardadoMeta(estado, meta));
+    const feitoEsteMes = aporteDoMes(estado, meta, mes);
+    if (falta === 0) return { falta, meses: 0, data: hoje, pronta: true, feitoEsteMes };
+    if (!meta.aporte) return { falta, meses: null, data: null, pronta: false, feitoEsteMes };
     const meses = Math.ceil(falta / meta.aporte);
-    return { falta, meses, data: somaMeses(mesDe(hoje), meses), pronta: false };
+    return { falta, meses, data: somaMeses(mes, feitoEsteMes ? meses : meses - 1), pronta: false, feitoEsteMes };
   }
 
   /* ---------- alertas ---------- */
@@ -444,15 +564,23 @@
     const lista = [];
     const conservador = projetar(estado, hoje, 12, { grupo });
     if (conservador.menor.saldo < 0) {
+      const dataBR = (d) => d.split('-').reverse().join('/');
+      const primeiro = conservador.primeiroNegativo;
       lista.push({
-        nivel: 'critico', titulo: `O saldo fica negativo em ${nomeMes(mesDe(conservador.menor.data))}`,
-        texto: `Contando só as entradas certas, chega a ${reais(conservador.menor.saldo)} em ${conservador.menor.data.split('-').reverse().join('/')}.`,
+        nivel: 'critico',
+        titulo: primeiro === hoje ? 'O saldo está negativo' : `O saldo fica negativo em ${nomeMes(mesDe(primeiro))}`,
+        texto: `Contando só as entradas certas, fica abaixo de zero em ${dataBR(primeiro)} e chega a ${reais(conservador.menor.saldo)} em ${dataBR(conservador.menor.data)}.`,
       });
     }
     const atrasados = proximos(estado, hoje, 0, grupo).filter((i) => i.atrasado);
     if (atrasados.length) {
       const soma = atrasados.reduce((s, i) => s + i.valor, 0);
       lista.push({ nivel: 'atencao', titulo: `${atrasados.length} ${atrasados.length > 1 ? 'contas vencidas sem confirmação' : 'conta vencida sem confirmação'}`, texto: `Somam ${reais(soma)}. Confirme o pagamento para o saldo ficar certo.` });
+    }
+    const naoRecebidas = proximos(estado, hoje, 0, grupo, { entradas: true }).filter((i) => i.atrasado && i.tipo === 'receita');
+    if (naoRecebidas.length) {
+      const soma = naoRecebidas.reduce((s, i) => s + i.valor, 0);
+      lista.push({ nivel: 'atencao', titulo: `${naoRecebidas.length} ${naoRecebidas.length > 1 ? 'entradas previstas sem confirmação' : 'entrada prevista sem confirmação'}`, texto: `Somam ${reais(soma)}. Confirme o recebimento para o saldo ficar certo.` });
     }
     const resumo = resumoMes(estado, mesDe(hoje), grupo);
     vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0).forEach((c) => {
@@ -469,7 +597,8 @@
     vivos, estadoVazio, estadoPadrao, vencimentoFatura, dataCaixa, liquidado, ocorrencias,
     itensDoMes, saldoHoje, saldoConta, gastoVariavel, mediaVariavel, fluxosSimulacao, projetar,
     historicoSaldo, resumoMes, proximos, criarParcelas, parcelamentos, previsaoMeta, alertas,
-    ehCartao, sinal,
+    ehCartao, sinal, contaPagadora, dataDoSaldo, jaNoSaldo, dataDoPagamento, dataDoSaldoAntigo,
+    realDaOcorrencia, fixosDoCartaoVencidos, guardadoMeta, aporteDoMes,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Fin = api;

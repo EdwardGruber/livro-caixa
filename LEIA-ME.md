@@ -53,7 +53,7 @@ O PDF é gerado no próprio aparelho, com a biblioteca [jsPDF](https://github.co
 
 No primeiro aparelho, abra **Ajustes > Sincronização**, cole a URL e a chave e clique em **Conectar**. Informe os nomes das duas pessoas quando o app pedir.
 
-Nos demais, inclusive os da outra pessoa, abra o site, escolha **Já uso em outro aparelho**, informe os mesmos dados e diga quem usa aquele aparelho.
+Nos demais, inclusive os da outra pessoa, abra o site, escolha **Já uso em outro aparelho**, informe os mesmos dados e diga quem usa aquele aparelho. Se um aparelho que começou em separado tentar se conectar a uma planilha que já tem dados, o app avisa antes de enviar qualquer coisa. Para usar a planilha, os dados daquele aparelho saem dele, com um backup baixado antes.
 
 Para instalar no celular:
 
@@ -62,11 +62,16 @@ Para instalar no celular:
 
 ## Como o app calcula
 
-- **Saldo hoje:** saldo inicial das contas mais o que já foi pago ou recebido.
-- **Cartão:** a compra aparece no mês em que foi feita, mas só sai do saldo no vencimento da fatura. Compras no dia do fechamento ou depois vão para a fatura seguinte.
-- **Fixos:** aparecem todo mês como previstos até serem confirmados. Fixos no cartão são confirmados sozinhos quando a data chega.
-- **Gastos variáveis estimados:** média dos últimos 3 meses completos, sem contar fixos, parcelas e gastos planejados. Dá para definir o valor à mão em **Planejar**.
+- **Saldo hoje:** saldo informado das contas mais o que foi pago ou recebido a partir do dia desse saldo. O que tem data anterior já está dentro dele: fica no histórico, sem alterar o valor.
+- **Cartão:** a compra aparece no mês em que foi feita, mas só sai do saldo no vencimento da fatura, pela conta escolhida no cartão. O app considera a fatura paga inteira nessa data. Compras no dia do fechamento ou depois vão para a fatura seguinte.
+- **Fixos:** aparecem todo mês como previstos até serem confirmados. Fixos no cartão são confirmados sozinhos quando a data chega. Ao cadastrar um fixo com início no passado, os meses anteriores entram como já pagos ou recebidos; nas entradas prováveis, não entram.
+- **Gastos variáveis estimados:** média dos últimos 3 meses completos, sem contar fixos, parcelas, gastos planejados e gastos marcados como fora do comum. O primeiro mês é proporcionalizado se os lançamentos começaram depois do dia 5, e ignorado se cobre menos de 15 dias. Dá para definir o valor à mão em **Planejar**.
+- **Metas:** ao guardar, o dinheiro pode sair de uma conta ou continuar no saldo. Se sair, o valor mensal entra na projeção até a meta ser alcançada, e o guardado não conta como gasto. Deixar um mês passar sem guardar adia a data prevista.
 - **Entradas prováveis:** ficam fora da projeção conservadora e aparecem em uma linha separada no gráfico.
+
+## Restaurar um backup
+
+Em **Ajustes > Restaurar backup**, tudo o que está no arquivo volta a ser como era, em todos os aparelhos, inclusive o que foi excluído ou alterado depois. O que foi lançado depois do backup continua no app. Antes de restaurar, o app baixa uma cópia do estado atual.
 
 ## Se a chave vazar
 

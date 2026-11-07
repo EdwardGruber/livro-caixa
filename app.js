@@ -52,12 +52,15 @@
     return { estado: Fin.estadoPadrao(), pendentes: {}, sinc: null, iniciado: false, exemplo: false, perfil: null };
   }
 
+  let textoSalvo = null;
+
   function carregar() {
     try {
       const t = localStorage.getItem(CHAVE);
       if (t) {
         const b = JSON.parse(t);
         Fin.COLECOES.forEach((c) => { if (!b.estado[c]) b.estado[c] = {}; });
+        textoSalvo = t;
         return b;
       }
     } catch (e) { /* armazenamento indisponível ou corrompido: começa limpo */ }
@@ -84,9 +87,25 @@
 
   function salvar() {
     try {
-      localStorage.setItem(CHAVE, JSON.stringify(banco));
+      const t = JSON.stringify(banco);
+      localStorage.setItem(CHAVE, t);
+      textoSalvo = t;
     } catch (e) {
       avisar('Não consegui salvar neste aparelho. Baixe um backup em Ajustes.');
+    }
+  }
+
+  /* Outra aba salvou: pega o que ela gravou antes de esta salvar por cima. */
+  function recarregarSeMudou() {
+    try {
+      const t = localStorage.getItem(CHAVE);
+      if (!t || t === textoSalvo) return false;
+      JSON.parse(t);
+      banco = carregar();
+      refazerVisao();
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -107,27 +126,39 @@
 
   /* Cobranças fixas no cartão acontecem sozinhas: viram lançamento quando a data chega. */
   function confirmarFixosNoCartao() {
-    if (!banco.perfil) return;
+    if (!banco.perfil) return false;
     let criou = false;
-    const h = hoje();
     [banco.perfil, AREA_CONJUNTA].forEach((area) => {
-      const v = visao(area);
-      Fin.ocorrencias(v, mesDe(h)).forEach((o) => {
-        if (o.data <= h && Fin.ehCartao(v, o)) {
-          gravar('lancamentos', realDaOcorrencia(o, { area }));
-          criou = true;
-        }
+      Fin.fixosDoCartaoVencidos(visao(area), hoje(), area).forEach((reg) => {
+        if (banco.estado.lancamentos[reg.id]) return;
+        banco.estado.lancamentos[reg.id] = reg;
+        if (!banco.exemplo) banco.pendentes['lancamentos|' + reg.id] = 1;
+        criou = true;
       });
     });
-    if (criou) salvar();
+    if (criou) {
+      refazerVisao();
+      salvar();
+    }
+    return criou;
   }
 
-  function realDaOcorrencia(o, extras = {}) {
-    return {
-      id: `rc-${o.recorrenteId}-${o.competencia}`, tipo: o.tipo, descricao: o.descricao, valor: o.valor,
-      categoriaId: o.categoriaId, contaId: o.contaId, data: o.data, certeza: 'certa', pago: true,
-      recorrenteId: o.recorrenteId, competencia: o.competencia, area: o.area, ...extras,
-    };
+  const realDaOcorrencia = Fin.realDaOcorrencia;
+
+  /* Contas de antes da "data do saldo" ganham a data que preserva o saldo que já mostravam. */
+  function migrarSaldos() {
+    if (banco.exemplo) return;
+    let mudou = false;
+    Object.values(banco.estado.contas).forEach((c) => {
+      if (c.excluido || c.tipo === 'cartao' || c.saldoData || !c.saldoInicial || c.atualizadoEm <= 1) return;
+      banco.estado.contas[c.id] = { ...c, saldoData: Fin.dataDoSaldoAntigo(visao(Fin.areaDe(c)), c, hoje()), atualizadoEm: c.atualizadoEm + 1 };
+      banco.pendentes['contas|' + c.id] = 1;
+      mudou = true;
+    });
+    if (mudou) {
+      refazerVisao();
+      salvar();
+    }
   }
 
   /* ---------- sincronização ---------- */
@@ -167,6 +198,10 @@
     sinc.temporizador = setTimeout(sincronizar, ms);
   }
 
+  const mensagemErroSinc = (e) => (e.message === 'chave'
+    ? 'A planilha recusou a chave. Confira a chave de acesso.'
+    : 'Não consegui falar com a planilha. Confira a URL e se a implantação está como "Qualquer pessoa". Seus dados continuam salvos neste aparelho.');
+
   async function sincronizar() {
     if (!banco.sinc || banco.exemplo) return false;
     if (sinc.emCurso) { sinc.repetir = true; return false; }
@@ -189,14 +224,15 @@
       sinc.situacao = 'ok';
       sucesso = true;
       refazerVisao();
-      if (mudouAlgo) confirmarFixosNoCartao();
+      if (mudouAlgo) {
+        migrarSaldos();
+        if (confirmarFixosNoCartao()) sinc.repetir = true;
+      }
       salvar();
       if (mudouAlgo) desenharSePossivel();
     } catch (e) {
       sinc.situacao = 'erro';
-      sinc.mensagem = e.message === 'chave'
-        ? 'A planilha recusou a chave. Confira a chave de acesso.'
-        : 'Não consegui falar com a planilha. Confira a URL e se a implantação está como "Qualquer pessoa". Seus dados continuam salvos neste aparelho.';
+      sinc.mensagem = mensagemErroSinc(e);
     } finally {
       sinc.emCurso = false;
       sinc.tentou = true;
@@ -232,7 +268,8 @@
   }
 
   const grupos = () => [...new Set(vivos(estado, 'contas').map((c) => c.grupo || 'Pessoal'))];
-  const nomeCategoria = (id) => (estado.categorias[id] ? estado.categorias[id].nome : 'Sem categoria');
+  const CATEGORIA_META = 'meta';
+  const nomeCategoria = (id) => (id === CATEGORIA_META ? 'Meta' : estado.categorias[id] ? estado.categorias[id].nome : 'Sem categoria');
   const nomeConta = (id) => (estado.contas[id] ? estado.contas[id].nome : 'Conta removida');
 
   function segmento(acao, atual, opcoes, classe = '') {
@@ -483,6 +520,7 @@
     const etiquetas = [
       item.parcelaGrupo ? `<span class="etiqueta">${item.parcela}/${item.parcelas}</span>` : '',
       item.recorrenteId ? '<span class="etiqueta">Fixo</span>' : '',
+      item.metaId ? '<span class="etiqueta">Meta</span>' : '',
       item.tipo === 'receita' && item.certeza === 'provavel' ? '<span class="etiqueta provavel">Provável</span>' : '',
       atrasado ? '<span class="etiqueta atraso">Vencido</span>' : '',
     ].join('');
@@ -515,7 +553,7 @@
     const proj = Fin.projetar(estado, h, 0, { grupo: ui.grupo });
     const fimMes = proj.finaisDeMes[0];
     const alertas = Fin.alertas(estado, h, ui.grupo);
-    const prox = Fin.proximos(estado, h, 30, ui.grupo).slice(0, 7);
+    const prox = Fin.proximos(estado, h, 30, ui.grupo, { entradas: true }).slice(0, 7);
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
     return `
       <section class="heroi" aria-label="Resumo">
@@ -540,7 +578,7 @@
         <div class="pilha">
           <section class="cartao">
             <div class="cartao-topo"><h2>Próximos 30 dias</h2></div>
-            ${prox.length ? prox.map(linhaProximo).join('') : '<div class="vazio"><span>Nenhuma conta a vencer.</span></div>'}
+            ${prox.length ? prox.map(linhaProximo).join('') : '<div class="vazio"><span>Nada previsto.</span></div>'}
           </section>
           <section class="cartao">
             <div class="cartao-topo"><h2>Limites do mês</h2><a class="link" href="#ajustes">Definir</a></div>
@@ -551,7 +589,8 @@
   };
 
   function linhaProximo(i) {
-    const corpo = `<span class="linha-texto"><b>${esc(i.descricao)}${i.atrasado ? '<span class="etiqueta atraso">Vencido</span>' : ''}</b><small>${esc(nomeDia(i.quando))}${i.fatura ? '' : ' · ' + esc(nomeConta(i.contaId))}</small></span><span class="linha-valor num">${reais(i.valor)}</span>`;
+    const entrada = i.tipo === 'receita';
+    const corpo = `<span class="linha-texto"><b>${esc(i.descricao)}${i.atrasado ? `<span class="etiqueta atraso">${entrada ? 'A confirmar' : 'Vencido'}</span>` : ''}</b><small>${esc(nomeDia(i.quando))}${i.fatura ? '' : ' · ' + esc(nomeConta(i.contaId))}</small></span><span class="linha-valor num ${entrada ? 'pos' : ''}">${entrada ? '+' : ''}${reais(i.valor)}</span>`;
     if (i.fatura) return `<div class="linha-item"><a class="linha-corpo" href="#lancamentos" style="color:inherit;text-decoration:none">${corpo}</a></div>`;
     return `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="abrir-item" data-id="${esc(i.id)}">${corpo}</button></div>`;
   }
@@ -569,8 +608,10 @@
     if (animar) Graficos.contar($('#saldo-heroi'), saldo, (v) => reais(v));
     const d = graficoSaldo($('#grafico-saldo'), ui.faixa, animar);
     const m = d.certas.menor;
-    const media = d.certas.variavelMensal;
-    $('#frase-saldo').textContent = `Menor saldo previsto: ${reais(m.saldo)} em ${dataBR(m.data)}${media ? `. Inclui ${reais(media)} por mês de gastos variáveis.` : '.'}`;
+    const inclui = [];
+    if (d.certas.variavelMensal) inclui.push(`${reais(d.certas.variavelMensal)} por mês de gastos variáveis`);
+    if (d.certas.metasMensal) inclui.push(`${reais(d.certas.metasMensal)} por mês para metas`);
+    $('#frase-saldo').textContent = `Menor saldo previsto: ${reais(m.saldo)} em ${dataBR(m.data)}.${inclui.length ? ` Inclui ${inclui.join(' e ')}.` : ''}`;
   };
 
   vistas.lancamentos = () => {
@@ -588,6 +629,7 @@
           <div><small>Sobra</small><strong class="num ${r.sobra < 0 ? 'neg' : ''}">${reais(r.sobra, { compacto: true })}</strong></div>
         </div>
         ${r.entradasProvaveis ? `<p class="nota" style="margin-top:8px">Mais ${reais(r.entradasProvaveis)} em entradas prováveis, fora da conta acima.</p>` : ''}
+        ${r.guardado ? `<p class="nota" style="margin-top:8px">${reais(r.guardado)} guardados para metas, fora das saídas.</p>` : ''}
         <button type="button" class="btn" data-acao="pdf-lancamentos" style="width:100%;margin-top:12px">Exportar este mês em PDF</button>
       </section>
       <section class="cartao">
@@ -702,7 +744,7 @@
     const media = Fin.mediaVariavel(estado, h, ui.grupo);
     const origem = {
       manual: 'Valor definido por você.',
-      media: `Média dos últimos ${media.meses} ${media.meses > 1 ? 'meses' : 'mês'}, sem contar fixos, parcelas e gastos planejados.`,
+      media: `Média dos últimos ${media.meses} ${media.meses > 1 ? 'meses' : 'mês'}, sem contar fixos, parcelas, gastos planejados e gastos fora do comum.`,
       ritmo: 'Estimado pelo ritmo de gastos deste mês.',
       'sem-dados': 'Ainda sem histórico. Lance seus gastos ou defina um valor abaixo.',
     }[media.origem];
@@ -741,13 +783,19 @@
   };
 
   function linhaMeta(m) {
-    const prev = Fin.previsaoMeta(m, hoje());
-    const pct = Math.min(100, ((m.guardado || 0) / m.alvo) * 100);
-    const texto = prev.pronta ? 'Meta alcançada' : prev.data ? `Faltam ${reais(prev.falta)}. Guardando ${reais(m.aporte)} por mês, chega em ${nomeMes(prev.data)}.` : `Faltam ${reais(prev.falta)}. Defina quanto guardar por mês para ver a data.`;
-    return `<button type="button" class="barra-linha" data-acao="editar-meta" data-id="${esc(m.id)}" style="width:100%;text-align:left">
-      <div class="barra-info"><span>${esc(m.nome)}</span><span class="num mudo">${Math.round(pct)}%</span></div>
-      <div class="trilho"><span class="enche meta" style="width:${pct}%"></span></div>
-      <span class="pequeno mudo">${esc(texto)}</span></button>`;
+    const prev = Fin.previsaoMeta(m, hoje(), estado);
+    const pct = Math.min(100, (Fin.guardadoMeta(estado, m) / m.alvo) * 100);
+    const jaGuardou = prev.feitoEsteMes ? ' Este mês já está guardado.' : '';
+    const texto = prev.pronta ? 'Meta alcançada' : prev.data ? `Faltam ${reais(prev.falta)}. Guardando ${reais(m.aporte)} por mês, chega em ${nomeMes(prev.data)}.${jaGuardou}` : `Faltam ${reais(prev.falta)}. Defina quanto guardar por mês para ver a data.`;
+    const podeGuardar = m.aporte && !prev.pronta && !prev.feitoEsteMes;
+    return `<div class="barra-linha">
+      <button type="button" data-acao="editar-meta" data-id="${esc(m.id)}" style="display:grid;gap:5px;width:100%;text-align:left">
+        <div class="barra-info"><span>${esc(m.nome)}</span><span class="num mudo">${Math.round(pct)}%</span></div>
+        <div class="trilho"><span class="enche meta" style="width:${pct}%"></span></div>
+        <span class="pequeno mudo">${esc(texto)}</span>
+      </button>
+      ${podeGuardar ? `<button type="button" class="btn" data-acao="guardar-meta" data-id="${esc(m.id)}">Guardei ${reais(Math.min(m.aporte, prev.falta))} este mês</button>` : ''}
+    </div>`;
   }
 
   function pintarSimulacao(animar) {
@@ -770,7 +818,7 @@
         <div><small>Menor saldo em 12 meses</small><strong class="num ${fica ? 'neg' : ''}">${reais(depois.menor.saldo)}</strong><small>era ${reais(antes.certas.menor.saldo)}</small></div>
         <div><small>Saldo daqui a 12 meses</small><strong class="num">${reais(depois.saldoFinal)}</strong><small>era ${reais(antes.certas.saldoFinal)}</small></div>
       </div>
-      <p class="nota" style="margin-bottom:10px">${fica ? `Assim o saldo fica negativo em ${dataBR(depois.menor.data)}, contando só as entradas certas.` : 'O saldo continua positivo nos próximos 12 meses, contando só as entradas certas.'}</p>
+      <p class="nota" style="margin-bottom:10px">${fica ? `Assim o saldo fica negativo em ${dataBR(depois.primeiroNegativo)} e chega a ${reais(depois.menor.saldo)} em ${dataBR(depois.menor.data)}, contando só as entradas certas.` : 'O saldo continua positivo nos próximos 12 meses, contando só as entradas certas.'}</p>
       <div id="grafico-sim"></div>
       ${s.tipo === 'compra' ? '<button type="button" class="btn" data-acao="sim-lancar" style="margin-top:10px">Lançar esta compra</button>' : ''}`;
     const inicioProj = antes.indiceHoje;
@@ -803,7 +851,7 @@
         <section class="cartao">
           <div class="cartao-topo"><h2>Contas e cartões</h2><button type="button" class="btn" data-acao="nova-conta">Nova conta</button></div>
           ${contas.map((c) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="editar-conta" data-id="${esc(c.id)}">
-            <span class="linha-texto"><b>${esc(c.nome)}</b><small>${c.tipo === 'cartao' ? `Cartão · fecha dia ${c.fechamento}, vence dia ${c.vencimento}` : c.tipo === 'carteira' ? 'Carteira' : 'Banco'} · ${esc(c.grupo || 'Pessoal')}</small></span>
+            <span class="linha-texto"><b>${esc(c.nome)}</b><small>${c.tipo === 'cartao' ? `Cartão · fecha dia ${c.fechamento}, vence dia ${c.vencimento}${Fin.contaPagadora(estado, c) ? ` · pago por ${esc(Fin.contaPagadora(estado, c).nome)}` : ''}` : c.tipo === 'carteira' ? 'Carteira' : 'Banco'} · ${esc(c.grupo || 'Pessoal')}</small></span>
             ${c.tipo === 'cartao' ? '' : `<span class="linha-valor num">${reais(Fin.saldoConta(estado, c, h))}</span>`}</button></div>`).join('')}
         </section>
         <section class="cartao">
@@ -899,9 +947,10 @@
     if (!cats.some((c) => c.id === f.categoriaId)) f.categoriaId = categoriaSugerida(f.tipo, cats, v);
     const contas = vivos(v, 'contas');
     const titulos = { novo: 'Novo lançamento', editar: 'Editar lançamento', confirmar: 'Confirmar fixo', fixo: 'Editar fixo' };
-    const descricoes = [...new Set(vivos(v, 'lancamentos').filter((l) => l.tipo === f.tipo).map((l) => l.descricao))].slice(0, 200);
+    const descricoes = [...new Set(vivos(v, 'lancamentos').filter((l) => l.tipo === f.tipo && !l.metaId).map((l) => l.descricao))].slice(0, 200);
     const eParcela = f.modo === 'editar' && f.parcelaGrupo;
-    const podeMudarArea = f.modo === 'novo' || (f.modo === 'editar' && !f.parcelaGrupo && !f.recorrenteId);
+    const podeMudarArea = f.modo === 'novo' || (f.modo === 'editar' && !f.parcelaGrupo && !f.recorrenteId && !f.metaId);
+    const podeSerExcepcional = f.tipo === 'despesa' && !f.metaId && ((f.modo === 'novo' && f.repete === 'uma') || (f.modo === 'editar' && !f.parcelaGrupo && !f.recorrenteId));
 
     abrirFolha(`<form data-form="lancamento" novalidate style="display:grid;gap:14px">
       ${topoFolha(titulos[f.modo])}
@@ -926,6 +975,7 @@
       ${f.modo === 'novo' && f.repete === 'mensal' ? `<label class="campo"><span>Repetir até (opcional)</span><input id="f-fim" type="month" value="${esc(f.fim)}"></label>` : ''}
       ${f.tipo === 'receita' && f.modo !== 'confirmar' ? `<div class="campo"><span class="rotulo">Esta entrada é</span>${segmento('f-certeza', f.certeza, [['certa', 'Certa'], ['provavel', 'Provável']], 'largo')}<span class="dica-campo">As prováveis, como honorários de êxito, ficam fora da projeção conservadora.</span></div>` : ''}
       <label class="marcar" id="f-pago-linha"><input id="f-pago" type="checkbox" ${f.pago ? 'checked' : ''}><span id="f-pago-rotulo"></span></label>
+      ${podeSerExcepcional ? `<label class="marcar"><input id="f-excepcional" type="checkbox" ${f.excepcional ? 'checked' : ''}><span>Gasto fora do comum, como um conserto. Não entra na estimativa mensal.</span></label>` : ''}
       <p class="dica-campo" id="f-dica" hidden></p>
       <div class="acoes" style="margin-top:4px">
         <button type="submit" class="btn primario" style="flex:1 1 100%">${f.modo === 'confirmar' ? 'Confirmar' : 'Salvar'}</button>
@@ -950,12 +1000,15 @@
     if (dia !== undefined) f.dia = dia;
     const pago = $('#f-pago', folha());
     if (pago) f.pago = pago.checked;
+    const excepcional = $('#f-excepcional', folha());
+    if (excepcional) f.excepcional = excepcional.checked;
   }
 
   function atualizarDicasForm() {
     const f = form;
     lerFormulario();
-    const conta = visao(f.area).contas[f.contaId];
+    const v = visao(f.area);
+    const conta = v.contas[f.contaId];
     const cartao = conta && conta.tipo === 'cartao';
     const linha = $('#f-pago-linha');
     const dica = $('#f-dica');
@@ -969,6 +1022,15 @@
       textos.push(`${n}x de ${reais(Math.round(valor / n))}.`);
     }
     if (f.modo === 'novo' && f.repete === 'mensal') textos.push('Aparece todo mês como previsto até você confirmar.');
+    const mesPassado = f.data && mesDe(f.data) < mesDe(hoje());
+    if (f.modo === 'novo' && f.repete === 'mensal' && mesPassado) {
+      textos.push(f.certeza === 'provavel' ? 'Os meses anteriores não entram.' : `Os meses anteriores entram como já ${f.tipo === 'receita' ? 'recebidos' : 'pagos'}.`);
+    }
+    if (f.modo === 'novo' && f.repete === 'parcelado' && f.data && f.data < hoje() && !cartao) textos.push('As parcelas já vencidas entram como pagas.');
+    const umaVez = (f.modo === 'novo' || f.modo === 'editar') && f.repete !== 'mensal';
+    if (umaVez && conta && f.data && Fin.jaNoSaldo(v, { contaId: f.contaId, data: f.data })) {
+      textos.push(`Esta data é anterior ao saldo informado em ${dataBR(Fin.dataDoSaldo(v, { contaId: f.contaId }))}: fica no histórico, mas não muda o saldo.`);
+    }
     if (dica) { dica.textContent = textos.join(' '); dica.hidden = !textos.length; }
     if (linha) {
       const esconder = cartao || f.modo === 'fixo' || f.modo === 'confirmar';
@@ -1005,29 +1067,40 @@
       gravar('recorrentes', { ...atual, ...base, data: undefined, inicio, fim: f.fim || null });
       mensagem = 'Fixo atualizado';
     } else if (f.modo === 'confirmar') {
-      gravar('lancamentos', realDaOcorrencia({ recorrenteId: f.recorrenteId, competencia: f.competencia, ...base }));
+      gravar('lancamentos', realDaOcorrencia({ recorrenteId: f.recorrenteId, competencia: f.competencia, ...base, data: Fin.dataDoPagamento(v, base) }));
       mensagem = 'Confirmado';
     } else if (f.modo === 'editar') {
       const atual = banco.estado.lancamentos[f.id];
       const provavelVirouPago = base.tipo === 'receita' && f.pago;
+      const pagouAgora = !cartao && f.pago && !atual.pago;
       gravar('lancamentos', {
         ...atual, ...base, pago: cartao ? false : f.pago,
+        data: pagouAgora ? Fin.dataDoPagamento(v, base) : base.data,
         certeza: provavelVirouPago ? 'certa' : certeza,
         planejado: base.tipo === 'despesa' && base.data > h && !atual.parcelaGrupo ? true : atual.planejado,
+        excepcional: base.tipo === 'despesa' && !!f.excepcional,
+        ...(atual.metaId ? { categoriaId: CATEGORIA_META } : {}),
       });
       mensagem = 'Alteração salva';
     } else if (f.repete === 'mensal') {
       const id = novoId();
       gravar('recorrentes', { id, ...base, inicio: base.data, data: undefined, fim: f.fim || null, pulados: [] });
-      const rec = estado.recorrentes[id];
-      if (f.pago && !cartao && base.data <= h) {
-        gravar('lancamentos', realDaOcorrencia({ recorrenteId: rec.id, competencia: mesDe(base.data), ...base }));
+      if (!cartao && base.data <= h) {
+        const vencidas = Fin.ocorrencias(visao(f.area), mesDe(h)).filter((o) => o.recorrenteId === id && o.data <= h);
+        const ultima = vencidas.pop();
+        // Só a mais recente pode estar em aberto; as anteriores já aconteceram.
+        if (certeza === 'provavel') {
+          if (vencidas.length) gravar('recorrentes', { ...banco.estado.recorrentes[id], pulados: vencidas.map((o) => o.competencia) });
+        } else {
+          vencidas.forEach((o) => gravar('lancamentos', realDaOcorrencia(o)));
+        }
+        if (ultima && f.pago) gravar('lancamentos', realDaOcorrencia(ultima));
       }
       confirmarFixosNoCartao();
       mensagem = 'Fixo criado';
     } else if (f.repete === 'parcelado') {
       const n = Math.min(120, Math.max(2, Number(f.parcelas) || 2));
-      Fin.criarParcelas({ ...base, pago: !cartao && f.pago && base.data <= h }, n, novoId, Date.now()).forEach((p) => gravar('lancamentos', p));
+      Fin.criarParcelas(base, n, novoId, Date.now()).forEach((p) => gravar('lancamentos', { ...p, pago: !cartao && f.pago && p.data <= h }));
       mensagem = `${n} parcelas criadas`;
     } else {
       const futuro = base.data > h;
@@ -1035,6 +1108,7 @@
         id: novoId(), ...base, pago: cartao ? false : (futuro ? false : f.pago),
         certeza: !futuro && f.pago ? 'certa' : certeza,
         ...(futuro && base.tipo === 'despesa' ? { planejado: true } : {}),
+        ...(base.tipo === 'despesa' && f.excepcional ? { excepcional: true } : {}),
       });
     }
     if (f.area !== areaAtiva()) mensagem = `Salvo em ${f.area === AREA_CONJUNTA ? 'Conjunta' : 'Minhas'}`;
@@ -1057,7 +1131,9 @@
   function formConta(c) {
     const novo = !c;
     const naConjunta = ui.area === 'conjunta';
-    c = c || { nome: '', tipo: 'banco', grupo: naConjunta ? 'Conjunta' : 'Pessoal', saldoInicial: 0, fechamento: 25, vencimento: 5 };
+    c = c || { nome: '', tipo: 'banco', grupo: naConjunta ? 'Conjunta' : 'Pessoal', saldoInicial: 0, saldoData: hoje(), fechamento: 25, vencimento: 5 };
+    const pagadoras = vivos(estado, 'contas').filter((x) => x.tipo !== 'cartao' && x.id !== c.id);
+    const pagadora = Fin.contaPagadora(estado, c);
     abrirFolha(`<form data-form="conta" data-id="${esc(c.id || '')}" novalidate style="display:grid;gap:14px">
       ${topoFolha(novo ? 'Nova conta' : 'Editar conta')}
       <label class="campo"><span>Nome</span><input id="c-nome" type="text" maxlength="60" value="${esc(c.nome)}" placeholder="Banco, carteira, cartão…" autocomplete="off"></label>
@@ -1066,10 +1142,19 @@
         <label class="campo"><span>Tipo</span><select id="c-tipo">${[['banco', 'Banco'], ['carteira', 'Carteira'], ['cartao', 'Cartão de crédito']].map(([v, r]) => `<option value="${v}" ${c.tipo === v ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
         <label class="campo" ${naConjunta ? 'hidden' : ''}><span>Separar em</span><select id="c-grupo">${(naConjunta ? ['Conjunta'] : ['Pessoal', 'Escritório']).map((g) => `<option ${(c.grupo || 'Pessoal') === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
       </div>
-      <label class="campo" data-sem-cartao ${c.tipo === 'cartao' ? 'hidden' : ''}><span>Saldo inicial</span><input id="c-saldo" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(c.saldoInicial))}"><span class="dica-campo" style="font-weight:400">Quanto havia antes do primeiro lançamento.</span></label>
-      <div class="grade-2" data-so-cartao ${c.tipo === 'cartao' ? '' : 'hidden'}>
-        <label class="campo"><span>Dia do fechamento</span><input id="c-fecha" type="number" inputmode="numeric" min="1" max="31" value="${c.fechamento || 25}"></label>
-        <label class="campo"><span>Dia do vencimento</span><input id="c-vence" type="number" inputmode="numeric" min="1" max="31" value="${c.vencimento || 5}"></label>
+      <div data-sem-cartao style="display:grid;gap:6px" ${c.tipo === 'cartao' ? 'hidden' : ''}>
+        <div class="grade-2">
+          <label class="campo"><span>Saldo</span><input id="c-saldo" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(c.saldoInicial))}"></label>
+          <label class="campo"><span>Saldo do dia</span><input id="c-saldo-data" type="date" max="${hoje()}" value="${esc(c.saldoData || '')}"></label>
+        </div>
+        <span class="dica-campo">Lançamentos anteriores a este dia já estão nesse saldo e não o alteram.</span>
+      </div>
+      <div data-so-cartao style="display:grid;gap:14px" ${c.tipo === 'cartao' ? '' : 'hidden'}>
+        <div class="grade-2">
+          <label class="campo"><span>Dia do fechamento</span><input id="c-fecha" type="number" inputmode="numeric" min="1" max="31" value="${c.fechamento || 25}"></label>
+          <label class="campo"><span>Dia do vencimento</span><input id="c-vence" type="number" inputmode="numeric" min="1" max="31" value="${c.vencimento || 5}"></label>
+        </div>
+        <label class="campo"><span>A fatura é paga por</span><select id="c-paga">${pagadoras.map((x) => `<option value="${esc(x.id)}" ${pagadora && pagadora.id === x.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>
       </div>
       <div class="acoes"><button type="submit" class="btn primario" style="flex:1 1 100%">Salvar</button>
       ${novo ? '' : '<button type="button" class="btn perigo" data-acao="excluir-conta">Excluir conta</button>'}</div>
@@ -1092,16 +1177,22 @@
 
   function formMeta(m) {
     const novo = !m;
-    m = m || { nome: '', alvo: 0, guardado: 0, aporte: 0 };
+    const contas = vivos(estado, 'contas').filter((c) => c.tipo !== 'cartao');
+    const principal = contas.find((c) => c.tipo === 'banco') || contas[0];
+    m = m || { nome: '', alvo: 0, guardado: 0, aporte: 0, contaId: principal ? principal.id : null };
     abrirFolha(`<form data-form="meta" data-id="${esc(m.id || '')}" novalidate style="display:grid;gap:14px">
       ${topoFolha(novo ? 'Nova meta' : 'Editar meta')}
       <label class="campo"><span>Nome</span><input id="m-nome" type="text" maxlength="60" value="${esc(m.nome)}" placeholder="Reserva de emergência" autocomplete="off"></label>
       <p class="erro-campo" id="m-erro" hidden></p>
       <label class="campo"><span>Quanto quer juntar</span><input id="m-alvo" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(m.alvo))}"></label>
       <div class="grade-2">
-        <label class="campo"><span>Já guardado</span><input id="m-guardado" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(m.guardado))}"></label>
+        <label class="campo"><span>Já guardado</span><input id="m-guardado" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(m.id ? Fin.guardadoMeta(estado, m) : m.guardado))}"></label>
         <label class="campo"><span>Guardar por mês</span><input id="m-aporte" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(m.aporte))}"></label>
       </div>
+      <label class="campo"><span>Ao guardar, o dinheiro</span><select id="m-conta">
+        ${contas.map((c) => `<option value="${esc(c.id)}" ${m.contaId === c.id ? 'selected' : ''}>Sai de ${esc(c.nome)}</option>`).join('')}
+        <option value="" ${m.contaId ? '' : 'selected'}>Continua no saldo</option>
+      </select><span class="dica-campo" style="font-weight:400">Se sair, o valor mensal entra na projeção e o saldo diminui ao guardar.</span></label>
       <div class="acoes"><button type="submit" class="btn primario" style="flex:1 1 100%">Salvar</button>
       ${novo ? '' : '<button type="button" class="btn perigo" data-acao="excluir-meta">Excluir meta</button>'}</div>
     </form>`, novo ? '#m-nome' : null);
@@ -1197,6 +1288,7 @@
     const filtrado = ui.tipo !== 'todos' || ui.texto.trim();
     const notas = [];
     if (r.entradasProvaveis) notas.push(`Mais ${reais(r.entradasProvaveis)} em entradas prováveis, fora da conta acima.`);
+    if (r.guardado) notas.push(`${reais(r.guardado)} guardados para metas, fora das saídas.`);
     if (filtrado) notas.push('A lista mostra só os lançamentos do filtro aplicado na tela. O resumo considera o mês inteiro.');
     const blob = pdf.lancamentos({
       ...dadosCabecalho(`Lançamentos de ${nomeMes(ui.mes, true)}`),
@@ -1295,6 +1387,11 @@
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
+  const baixarBackup = () => entregarArquivo(
+    `financas-gl-${hoje()}.json`,
+    new Blob([JSON.stringify({ app: ID_BACKUP, geradoEm: new Date().toISOString(), estado: banco.estado })], { type: 'application/json' })
+  );
+
   function gerarCsv() {
     const celula = (v) => {
       let t = String(v == null ? '' : v);
@@ -1319,20 +1416,12 @@
         avisar('Este arquivo não é um backup do Finanças G&L.');
         return;
       }
-      pedirConfirmacao('Restaurar backup?', `O backup será misturado aos dados atuais. Em cada registro presente nos dois, a edição mais recente fica.`, 'Restaurar', () => {
-        Fin.COLECOES.forEach((c) => {
-          Object.values(dados.estado[c] || {}).forEach((r) => {
-            if (!r || !r.id) return;
-            const atual = banco.estado[c][r.id];
-            if (!atual || r.atualizadoEm > atual.atualizadoEm) {
-              banco.estado[c][r.id] = r;
-              if (!banco.exemplo) banco.pendentes[c + '|' + r.id] = 1;
-            }
-          });
-        });
+      pedirConfirmacao('Restaurar backup?', 'Tudo o que está no backup volta a ser como era, em todos os aparelhos, inclusive o que foi excluído ou alterado depois. O que foi lançado depois do backup continua aqui. Antes, uma cópia de agora é baixada.', 'Restaurar', async () => {
         fecharFolha();
+        await baixarBackup().catch(() => { /* cópia recusada: a pessoa já confirmou a restauração */ });
+        const total = Sincronia.restaurarBackup(banco.estado, dados.estado, banco.exemplo ? null : banco.pendentes, Date.now());
         concluir();
-        avisar('Backup restaurado');
+        avisar(total ? 'Backup restaurado' : 'Tudo já estava como no backup');
       });
     };
     leitor.readAsText(arquivo);
@@ -1346,12 +1435,41 @@
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) return falha('A URL deve começar com https://script.google.com/macros/s/ e terminar em /exec.');
     if (chave.length < 16) return falha('Cole a chave de acesso completa, mostrada ao rodar a função configurar.');
     erro.hidden = true;
+    avisar('Conectando à planilha…');
+    let planilha;
+    try {
+      if (navigator.onLine === false) throw new Error('offline');
+      // Só lê: nada deste aparelho vai para a planilha antes de ver o que há nela.
+      planilha = await Sincronia.trocarComPlanilha({ url, chave, desde: 0, mudancas: [], buscar: (u, o) => fetch(u, o) });
+    } catch (e) {
+      return falha(e.message === 'offline' ? 'Sem internet. Tente de novo quando estiver conectado.' : mensagemErroSinc(e));
+    }
+    if (!Sincronia.conflitoAoConectar(banco.estado, planilha.registros)) return concluirConexao(url, chave);
+    pedirConfirmacao(
+      'Esta planilha já tem outros dados',
+      'Este aparelho começou em separado, e juntar misturaria as finanças de vocês. Para usar a planilha, os dados deste aparelho saem daqui, com um backup baixado antes. Para mantê-los, cancele.',
+      'Usar a planilha',
+      async () => {
+        fecharFolha();
+        await baixarBackup().catch(() => { /* cópia recusada: a pessoa já confirmou */ });
+        banco = bancoNovo();
+        ui.area = 'meu';
+        ui.pedirSaldo = false;
+        ui.entrada = 'conectar';
+        refazerVisao();
+        salvar();
+        desenhar();
+        concluirConexao(url, chave);
+      }
+    );
+  }
+
+  async function concluirConexao(url, chave) {
     const anterior = banco.sinc;
     banco.sinc = { url, chave, desde: 0, ultima: null };
     // Envia tudo que este aparelho já tem; os padrões intactos não precisam ir.
     Fin.COLECOES.forEach((c) => Object.values(banco.estado[c]).forEach((r) => { if (r.atualizadoEm > 1) banco.pendentes[c + '|' + r.id] = 1; }));
     salvar();
-    avisar('Conectando à planilha…');
     const ok = await sincronizar();
     if (!ok) {
       const mensagem = sinc.mensagem || 'Sem internet. Tente de novo quando estiver conectado.';
@@ -1383,7 +1501,7 @@
     comecar: () => {
       const saldo = lerReais($('#saldo-inicial').value);
       const conta = vivos(estado, 'contas').find((c) => c.tipo === 'banco');
-      if (conta) gravar('contas', { ...conta, saldoInicial: saldo });
+      if (conta) gravar('contas', { ...conta, saldoInicial: saldo, saldoData: hoje() });
       ui.pedirSaldo = false;
       salvar();
       agendarSinc();
@@ -1462,7 +1580,7 @@
       const item = acharItem(id);
       if (!item) return;
       if (item.virtual) {
-        gravar('lancamentos', realDaOcorrencia(item));
+        gravar('lancamentos', realDaOcorrencia({ ...item, data: Fin.dataDoPagamento(estado, item) }));
         avisar(item.tipo === 'receita' ? 'Recebimento confirmado' : 'Pagamento confirmado', () => {
           const real = estado.lancamentos[`rc-${item.recorrenteId}-${item.competencia}`];
           gravar('lancamentos', { ...real, excluido: true });
@@ -1470,7 +1588,7 @@
         });
       } else {
         const pago = !item.pago;
-        gravar('lancamentos', { ...item, pago, certeza: pago && item.tipo === 'receita' ? 'certa' : item.certeza });
+        gravar('lancamentos', { ...item, pago, data: pago ? Fin.dataDoPagamento(estado, item) : item.data, certeza: pago && item.tipo === 'receita' ? 'certa' : item.certeza });
       }
       concluir();
     },
@@ -1480,7 +1598,7 @@
       if (item.virtual) {
         form = { modo: 'confirmar', area: areaAtiva(), tipo: item.tipo, valorTxt: valorParaCampo(item.valor), descricao: item.descricao, categoriaId: item.categoriaId, contaId: item.contaId, data: item.data, repete: 'uma', fim: '', certeza: 'certa', pago: true, recorrenteId: item.recorrenteId, competencia: item.competencia };
       } else {
-        form = { modo: 'editar', area: areaAtiva(), id: item.id, tipo: item.tipo, valorTxt: valorParaCampo(item.valor), descricao: item.descricao, categoriaId: item.categoriaId, contaId: item.contaId, data: item.data, repete: 'uma', fim: '', certeza: item.certeza || 'certa', pago: !!item.pago, parcelaGrupo: item.parcelaGrupo, parcela: item.parcela, parcelas: item.parcelas, recorrenteId: item.recorrenteId };
+        form = { modo: 'editar', area: areaAtiva(), id: item.id, tipo: item.tipo, valorTxt: valorParaCampo(item.valor), descricao: item.descricao, categoriaId: item.categoriaId, contaId: item.contaId, data: item.data, repete: 'uma', fim: '', certeza: item.certeza || 'certa', pago: !!item.pago, parcelaGrupo: item.parcelaGrupo, parcela: item.parcela, parcelas: item.parcelas, recorrenteId: item.recorrenteId, metaId: item.metaId, excepcional: !!item.excepcional };
       }
       pintarFormulario(false);
     },
@@ -1544,6 +1662,23 @@
       gravar('config', { ...estado.config.geral, variavelManual: null });
       concluir();
     },
+    'guardar-meta': (b) => {
+      const meta = estado.metas[b.dataset.id];
+      const valor = Math.min(meta.aporte, Fin.previsaoMeta(meta, hoje(), estado).falta);
+      const conta = meta.contaId && estado.contas[meta.contaId];
+      let desfazer;
+      if (conta && !conta.excluido) {
+        const id = novoId();
+        gravar('lancamentos', { id, tipo: 'despesa', descricao: `Guardado: ${meta.nome}`, valor, categoriaId: CATEGORIA_META, contaId: conta.id, data: hoje(), certeza: 'certa', pago: true, metaId: meta.id });
+        desfazer = () => gravar('lancamentos', { ...banco.estado.lancamentos[id], excluido: true });
+      } else {
+        const anterior = { ...meta };
+        gravar('metas', { ...meta, guardado: (meta.guardado || 0) + valor, ultimoAporte: mesDe(hoje()) });
+        desfazer = () => gravar('metas', anterior);
+      }
+      concluir();
+      avisar(`${reais(valor)} guardados`, () => { desfazer(); concluir(); });
+    },
     'nova-meta': () => formMeta(null),
     'editar-meta': (b) => formMeta(estado.metas[b.dataset.id]),
     'excluir-meta': () => excluirVarios('metas', [$('form[data-form="meta"]').dataset.id], 'Meta excluída'),
@@ -1554,6 +1689,7 @@
       const usada = vivos(estado, 'lancamentos').some((l) => l.contaId === id) || vivos(estado, 'recorrentes').some((r) => r.contaId === id);
       const erro = $('#c-erro');
       if (usada) { erro.textContent = 'Esta conta tem lançamentos ou fixos. Mude-os de conta antes de excluir.'; erro.hidden = false; return; }
+      if (vivos(estado, 'contas').some((c) => c.contaPagamento === id)) { erro.textContent = 'Esta conta paga a fatura de um cartão. Troque isso no cartão antes de excluir.'; erro.hidden = false; return; }
       if (vivos(estado, 'contas').length <= 1) { erro.textContent = 'Mantenha pelo menos uma conta.'; erro.hidden = false; return; }
       excluirVarios('contas', [id], 'Conta excluída');
     },
@@ -1593,8 +1729,8 @@
         avisar('Não consegui copiar. Abra apps-script/Codigo.gs no projeto.');
       }
     },
-    'baixar-json': () => baixar(`financas-gl-${hoje()}.json`, JSON.stringify({ app: ID_BACKUP, geradoEm: new Date().toISOString(), estado: banco.estado }), 'application/json'),
-    'baixar-csv': () => baixar(`financas-gl-${nomeArquivoArea()}-${hoje()}.csv`, gerarCsv(), 'text/csv;charset=utf-8'),
+    'baixar-json': () => baixarBackup().catch(() => { /* compartilhamento cancelado */ }),
+    'baixar-csv': () => entregarArquivo(`financas-gl-${nomeArquivoArea()}-${hoje()}.csv`, new Blob([gerarCsv()], { type: 'text/csv;charset=utf-8' })).catch(() => { /* compartilhamento cancelado */ }),
     restaurar: () => $('#arquivo-backup').click(),
   };
 
@@ -1628,7 +1764,16 @@
       const tipo = $('#c-tipo').value;
       const dia = (el) => Math.min(31, Math.max(1, Number($(el).value) || 1));
       const atual = f.dataset.id ? estado.contas[f.dataset.id] : { id: novoId() };
-      gravar('contas', { ...atual, nome, tipo, grupo: $('#c-grupo').value, saldoInicial: tipo === 'cartao' ? 0 : lerReais($('#c-saldo').value), fechamento: tipo === 'cartao' ? dia('#c-fecha') : undefined, vencimento: tipo === 'cartao' ? dia('#c-vence') : undefined });
+      const cartao = tipo === 'cartao';
+      const saldoData = $('#c-saldo-data').value;
+      gravar('contas', {
+        ...atual, nome, tipo, grupo: $('#c-grupo').value,
+        saldoInicial: cartao ? 0 : lerReais($('#c-saldo').value),
+        saldoData: cartao || !saldoData ? undefined : (saldoData > hoje() ? hoje() : saldoData),
+        fechamento: cartao ? dia('#c-fecha') : undefined,
+        vencimento: cartao ? dia('#c-vence') : undefined,
+        contaPagamento: cartao ? $('#c-paga').value || undefined : undefined,
+      });
       fecharFolha();
       concluir();
       avisar('Conta salva');
@@ -1647,7 +1792,9 @@
       const alvo = lerReais($('#m-alvo').value);
       if (!nome || alvo <= 0) { const e = $('#m-erro'); e.textContent = 'Informe o nome e o valor da meta.'; e.hidden = false; return; }
       const atual = f.dataset.id ? estado.metas[f.dataset.id] : { id: novoId() };
-      gravar('metas', { ...atual, nome, alvo, guardado: lerReais($('#m-guardado').value), aporte: lerReais($('#m-aporte').value) });
+      // O formulário mostra o total; o que veio de lançamentos continua vindo deles.
+      const dosLancamentos = Fin.guardadoMeta(estado, { id: atual.id, guardado: 0 });
+      gravar('metas', { ...atual, nome, alvo, guardado: Math.max(0, lerReais($('#m-guardado').value) - dosLancamentos), aporte: lerReais($('#m-aporte').value), contaId: $('#m-conta').value || null });
       fecharFolha();
       concluir();
       avisar('Meta salva');
@@ -1691,6 +1838,9 @@
       pintarSimulacao(false);
     } else if (id && id.startsWith('f-') && form) {
       atualizarDicasForm();
+    } else if (id === 'c-saldo') {
+      // Saldo novo é o de hoje, a menos que a pessoa escolha outro dia.
+      $('#c-saldo-data').value = hoje();
     }
   });
 
@@ -1699,7 +1849,7 @@
     if (id === 'f-descricao' && form) {
       // Repete a categoria e a conta usadas da última vez com essa descrição.
       const texto = e.target.value.trim().toLowerCase();
-      const ultimo = vivos(visao(form.area), 'lancamentos').filter((l) => l.tipo === form.tipo && l.descricao.toLowerCase() === texto).sort((a, b) => b.atualizadoEm - a.atualizadoEm)[0];
+      const ultimo = vivos(visao(form.area), 'lancamentos').filter((l) => l.tipo === form.tipo && !l.metaId && l.descricao.toLowerCase() === texto).sort((a, b) => b.atualizadoEm - a.atualizadoEm)[0];
       if (ultimo && form.modo === 'novo') {
         $('#f-categoria').value = ultimo.categoriaId;
         $('#f-conta').value = ultimo.contaId;
@@ -1725,10 +1875,14 @@
     desenhar(true);
     window.scrollTo(0, 0);
   });
+  window.addEventListener('storage', (e) => {
+    if (e.key === CHAVE && recarregarSeMudou()) desenharSePossivel();
+  });
   window.addEventListener('online', () => agendarSinc(200));
   window.addEventListener('offline', () => { sinc.situacao = 'offline'; pintarSelo(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      recarregarSeMudou();
       confirmarFixosNoCartao();
       agendarSinc(200);
       desenharSePossivel();
@@ -1739,7 +1893,10 @@
   /* ---------- início ---------- */
   lerRota();
   refazerVisao();
-  if (banco.iniciado) confirmarFixosNoCartao();
+  if (banco.iniciado) {
+    migrarSaldos();
+    confirmarFixosNoCartao();
+  }
   desenhar(true);
   agendarSinc(300);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
