@@ -91,6 +91,11 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 .navegacao .marca-lateral, .navegacao .rodape-lateral { display: none; }
+.perfil-lateral { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-width: 0; }
+.perfil-lateral > span:last-child { display: grid; min-width: 0; }
+.perfil-lateral b { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perfil-lateral small { font-size: 12px; color: var(--tinta-2); }
+.avatar { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--marca-suave); color: var(--marca); font: 700 15px var(--titulo); }
 .aba {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   height: var(--barra-h); font-size: 11px; font-weight: 500; color: var(--tinta-2); min-width: 0;
@@ -104,8 +109,14 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.topo { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-bottom: 12px; flex-wrap: wrap; }
-.topo h1 { font-size: 22px; flex: 1 1 auto; min-width: 0; }
+.topo { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-bottom: 14px; flex-wrap: wrap; }
+.titulo-topo { flex: 1 1 auto; min-width: 0; display: grid; }
+.topo h1 { font-size: 22px; min-width: 0; overflow-wrap: anywhere; }
+.data-hoje { font-size: 13px; color: var(--tinta-2); }
+.data-hoje::first-letter { text-transform: uppercase; }
+.topo-filtros { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.btn.leve { min-height: 36px; padding: 6px 12px; font-size: 13.5px; background: var(--superficie); }
+.btn.leve svg { width: 17px; height: 17px; }
 .selo-sinc {
   display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tinta-2);
   padding: 6px 10px; border-radius: 99px; background: var(--superficie); border: 1px solid var(--linha); min-height: 32px;
@@ -332,7 +343,19 @@ dialog#folha::backdrop { background: rgb(5 15 12 / .5); animation: escurece .2s 
 .boas-vindas h1 { font-size: clamp(34px, 9vw, 46px); line-height: 1.05; }
 .boas-vindas .btn { width: 100%; }
 
+/* Celular: título e ícones numa linha, Minhas/Conjunta na de baixo, ocupando a largura. */
+@media (max-width: 899px) {
+  .topo-filtros { order: 5; flex: 1 1 100%; }
+  .topo-filtros .seletor-area { flex: 1 1 auto; }
+  .topo-filtros .seletor-area button { flex: 1 1 0; }
+  .btn.leve span { display: none; }
+  .btn.leve { width: 40px; padding: 0; }
+}
 @media (max-width: 480px) {
+  /* No celular o selo vira só o ponto colorido; o texto completo fica em Ajustes. */
+  .selo-sinc { width: 24px; padding: 0; justify-content: center; border: 0; background: none; }
+  .selo-sinc i { width: 9px; height: 9px; }
+  .selo-sinc span { display: none; }
   .barra-filtros.empilha { grid-template-columns: minmax(0, 1fr); }
   .barra-filtros.empilha .seg { display: flex; width: 100%; }
   .barra-filtros.empilha .seg button { flex: 1 1 0; }
@@ -346,6 +369,8 @@ dialog#folha::backdrop { background: rgb(5 15 12 / .5); animation: escurece .2s 
     border-top: 0; border-right: 1px solid var(--linha); background: var(--superficie);
   }
   .navegacao .marca-lateral { display: block; font: 700 21px var(--titulo); padding: 0 12px 16px; color: var(--marca); letter-spacing: -.01em; }
+  .navegacao .rodape-lateral { display: grid; gap: 4px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--linha); }
+  .so-celular { display: none; }
   .aba { flex-direction: row; justify-content: flex-start; gap: 12px; height: 46px; padding: 0 12px; font-size: 14.5px; border-radius: 12px; }
   .aba:hover { background: var(--superficie-2); }
   .aba[aria-current="page"] { background: var(--marca-suave); }

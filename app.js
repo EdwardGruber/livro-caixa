@@ -37,7 +37,8 @@
     fixos: '<path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/>',
     graficos: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 17v-5M13 17V8M18 17v-8"/>',
     planejar: '<path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/>',
-    ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+    ajustes: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    baixar: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/>',
     mais: '<path d="M12 5v14M5 12h14"/>',
     fechar: '<path d="M6 6l12 12M18 6L6 18"/>',
     esquerda: '<path d="M15 5l-7 7 7 7"/>',
@@ -180,6 +181,7 @@
     $$('.selo-sinc').forEach((s) => {
       s.dataset.estado = banco.exemplo || !banco.sinc ? 'desligado' : sinc.situacao;
       s.lastElementChild.textContent = textoSelo();
+      s.title = textoSelo();
     });
     const detalhe = $('#sinc-detalhe');
     if (detalhe) detalhe.textContent = detalheSinc();
@@ -290,18 +292,32 @@
     if (!grupos().includes(ui.grupo)) ui.grupo = 'Tudo';
     const titulo = ui.vista === 'ajustes' ? 'Ajustes' : VISTAS.find(([v]) => v === ui.vista)[1];
     const gs = grupos();
+    const nome = nomePerfil(banco.perfil);
+    const acaoPdf = { lancamentos: 'pdf-lancamentos', graficos: 'pdf-graficos' }[ui.vista];
+    const aba = (v, r) => `<a class="aba" href="#${v}" ${ui.vista === v ? 'aria-current="page"' : ''} style="text-decoration:none">${icone(v)}<span>${r}</span></a>`;
     raiz.innerHTML = `<div class="moldura">
       <nav class="navegacao" aria-label="Seções">
         <div class="marca-lateral">${NOME_HTML}</div>
-        ${VISTAS.map(([v, r]) => `<a class="aba" href="#${v}" ${ui.vista === v ? 'aria-current="page"' : ''} style="text-decoration:none">${icone(v)}<span>${r}</span></a>`).join('')}
+        ${VISTAS.map(([v, r]) => aba(v, r)).join('')}
+        <div class="rodape-lateral">
+          ${aba('ajustes', 'Ajustes')}
+          <div class="perfil-lateral"><span class="avatar" aria-hidden="true">${esc(nome.trim().charAt(0).toUpperCase() || '?')}</span>
+            <span><b>${esc(nome)}</b><small>${ui.area === 'conjunta' ? 'Área conjunta' : 'Minhas finanças'}</small></span></div>
+        </div>
       </nav>
       <main class="principal">
         <header class="topo">
-          <h1>${ui.vista === 'inicio' ? NOME_HTML : titulo}</h1>
-          ${segmento('area', ui.area, [['meu', 'Minhas'], ['conjunta', 'Conjunta']], 'seletor-area')}
-          ${gs.length > 1 ? segmento('grupo', ui.grupo, [['Tudo', 'Tudo'], ...gs.map((g) => [g, g])]) : ''}
-          <a class="selo-sinc" href="#ajustes" style="text-decoration:none" data-estado="desligado"><i></i><span>${esc(textoSelo())}</span></a>
-          <a class="icone-btn" href="#ajustes" aria-label="Ajustes">${icone('ajustes')}</a>
+          <div class="titulo-topo">
+            <h1>${ui.vista === 'inicio' ? esc(saudacao(nome)) : titulo}</h1>
+            ${ui.vista === 'inicio' ? `<span class="data-hoje">${esc(dataPorExtenso())}</span>` : ''}
+          </div>
+          <div class="topo-filtros">
+            ${segmento('area', ui.area, [['meu', 'Minhas'], ['conjunta', 'Conjunta']], 'seletor-area')}
+            ${gs.length > 1 ? segmento('grupo', ui.grupo, [['Tudo', 'Tudo'], ...gs.map((g) => [g, g])]) : ''}
+          </div>
+          <a class="selo-sinc" href="#ajustes" style="text-decoration:none" data-estado="desligado" title="${esc(textoSelo())}"><i></i><span>${esc(textoSelo())}</span></a>
+          ${acaoPdf ? `<button type="button" class="btn leve" data-acao="${acaoPdf}" title="Exportar em PDF">${icone('baixar')}<span>PDF</span></button>` : ''}
+          <a class="icone-btn so-celular" href="#ajustes" aria-label="Ajustes">${icone('ajustes')}</a>
         </header>
         <div id="vista" class="vista${animar ? ' anima' : ''}">${banco.exemplo ? faixaExemplo() : ''}${vistas[ui.vista]()}</div>
       </main>
@@ -310,6 +326,15 @@
     pintarSelo();
     montar[ui.vista] && montar[ui.vista](animar);
   }
+
+  function saudacao(nome) {
+    const hora = new Date().getHours();
+    const parte = hora < 5 ? 'Boa noite' : hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+    const primeiro = String(nome || '').trim().split(/\s+/)[0];
+    return primeiro && primeiro !== 'Sem' ? `${parte}, ${primeiro}` : parte;
+  }
+
+  const dataPorExtenso = () => new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const faixaExemplo = () => `<div class="exemplo-faixa"><span>Estes são <b>dados de exemplo</b>, não os seus.</span><button type="button" class="btn" data-acao="apagar-exemplo">Apagar e começar</button></div>`;
 
@@ -555,9 +580,12 @@
     const fimMes = proj.finaisDeMes[0];
     const mesNome = nomeMes(mesDe(h), true).split(' ')[0];
     const compacto = (v) => reais(v, { compacto: true });
-    const numero = (rotulo, total, feito, textoFeito) => `<div class="numero"><small>${rotulo}</small><strong>${compacto(total)}</strong>
-      <div class="mini" aria-hidden="true"><span style="width:${total > 0 ? Math.min(100, (feito / total) * 100) : 0}%"></span></div>
-      <small class="detalhe">${compacto(feito)} ${textoFeito}</small></div>`;
+    const numero = (rotulo, total, feito, textoFeito) => {
+      const pct = total > 0 ? Math.min(100, Math.round((feito / total) * 100)) : 0;
+      return `<div class="numero"><small>${rotulo}</small><strong>${compacto(total)}</strong>
+        <div class="mini" aria-hidden="true"><span style="width:${pct}%"></span></div>
+        <small class="detalhe" title="${compacto(feito)} ${textoFeito}">${pct}% ${textoFeito}</small></div>`;
+    };
     const alertas = Fin.alertas(estado, h, ui.grupo);
     const prox = Fin.proximos(estado, h, 30, ui.grupo, { entradas: true }).slice(0, 7);
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
@@ -639,7 +667,6 @@
         </div>
         ${r.entradasProvaveis ? `<p class="nota" style="margin-top:8px">Mais ${reais(r.entradasProvaveis)} em entradas prováveis, fora da conta acima.</p>` : ''}
         ${r.guardado ? `<p class="nota" style="margin-top:8px">${reais(r.guardado)} guardados para metas, fora das saídas.</p>` : ''}
-        <button type="button" class="btn" data-acao="pdf-lancamentos" style="width:100%;margin-top:12px">Exportar este mês em PDF</button>
       </section>
       <section class="cartao">
         <div class="barra-filtros empilha" style="margin-bottom:12px">
@@ -718,8 +745,7 @@
     const r = Fin.resumoMes(estado, ui.mes, ui.grupo);
     const linhas = Object.entries(r.porCategoria).sort((a, b) => b[1] - a[1]);
     const maior = linhas.length ? linhas[0][1] : 1;
-    return `<button type="button" class="btn" data-acao="pdf-graficos">Exportar gráficos em PDF</button>
-    <div class="colunas">
+    return `<div class="colunas">
       <div class="pilha">
         <section class="cartao">
           <div class="cartao-topo"><div><h2>Entradas × saídas</h2><p class="nota">Meses seguintes em tom claro, com o que já está previsto.</p></div>${seg}</div>
