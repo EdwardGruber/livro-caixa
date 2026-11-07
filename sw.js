@@ -1,4 +1,4 @@
-/* FinanÃ§as G&L â€” permite abrir o app sem internet. Nunca toca nas chamadas Ã  planilha. */
+/* Finanças G&L — permite abrir o app sem internet. Nunca toca nas chamadas à planilha. */
 const VERSAO = 'financasgl-v5';
 const ARQUIVOS = [
   './', 'index.html', 'estilo.css', 'tema.js', 'logica.js', 'sincronia.js', 'graficos.js', 'app.js',
@@ -32,7 +32,7 @@ self.addEventListener('fetch', (e) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // Com internet, sempre a versÃ£o mais nova; sem internet, a Ãºltima guardada.
+  // Com internet, sempre a versão mais nova; sem internet, a última guardada.
   e.respondWith(
     fetch(e.request)
       .then((r) => {
