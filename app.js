@@ -1995,6 +1995,14 @@
   desenhar(true);
   agendarSinc(300);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    // Versão nova instalada enquanto o app estava aberto: recarrega uma vez para usá-la.
+    const tinhaVersao = !!navigator.serviceWorker.controller;
+    let recarregou = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!tinhaVersao || recarregou) return;
+      recarregou = true;
+      location.reload();
+    });
     navigator.serviceWorker.register('sw.js').catch(() => { /* segue funcionando sem o modo offline */ });
   }
 })();
