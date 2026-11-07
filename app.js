@@ -39,6 +39,7 @@
     planejar: '<path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/>',
     ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
     mais: '<path d="M12 5v14M5 12h14"/>',
+    menos: '<path d="M5 12h14"/>',
     fechar: '<path d="M6 6l12 12M18 6L6 18"/>',
     esquerda: '<path d="M15 5l-7 7 7 7"/>',
     direita: '<path d="M9 5l7 7-7 7"/>',
@@ -549,21 +550,43 @@
 
   vistas.inicio = () => {
     const h = hoje();
-    const r = Fin.resumoMes(estado, mesDe(h), ui.grupo);
+    const r = Fin.resumoMes(estado, mesDe(h), ui.grupo, h);
     const proj = Fin.projetar(estado, h, 0, { grupo: ui.grupo });
     const fimMes = proj.finaisDeMes[0];
+    const comp = Fin.composicaoSaldo(estado, h, ui.grupo);
+    const ate = fimMes.saldo - comp.saldo;
+    const mesNome = nomeMes(mesDe(h), true).split(' ')[0];
+    const compacto = (v) => reais(v, { compacto: true });
+    const numero = (rotulo, total, feito, textoFeito) => `<div class="numero"><small>${rotulo}</small><strong>${compacto(total)}</strong>
+      <div class="mini" aria-hidden="true"><span style="width:${total > 0 ? Math.min(100, (feito / total) * 100) : 0}%"></span></div>
+      <small class="detalhe">${compacto(feito)} ${textoFeito}</small></div>`;
     const alertas = Fin.alertas(estado, h, ui.grupo);
     const prox = Fin.proximos(estado, h, 30, ui.grupo, { entradas: true }).slice(0, 7);
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
     return `
       <section class="heroi" aria-label="Resumo">
-        <div class="heroi-rotulo">${ui.area === 'conjunta' ? 'Saldo conjunto hoje' : 'Seu saldo hoje'}${ui.grupo !== 'Tudo' ? ' · ' + esc(ui.grupo) : ''}</div>
-        <div class="heroi-valor" id="saldo-heroi">${reais(Fin.saldoHoje(estado, h, ui.grupo))}</div>
-        <div class="heroi-sub">Previsão para o fim de ${esc(nomeMes(mesDe(h), true).split(' ')[0])}: <b>${reais(fimMes.saldo)}</b></div>
+        <div class="heroi-linha">
+          <div>
+            <div class="heroi-rotulo">${ui.area === 'conjunta' ? 'Saldo conjunto hoje' : 'Seu saldo hoje'}${ui.grupo !== 'Tudo' ? ' · ' + esc(ui.grupo) : ''}</div>
+            <div class="heroi-valor" id="saldo-heroi">${reais(Fin.saldoHoje(estado, h, ui.grupo))}</div>
+          </div>
+          <div class="heroi-atalhos">
+            <button type="button" class="atalho" data-acao="lancar" data-valor="despesa">${icone('menos')}<span>Saída</span></button>
+            <button type="button" class="atalho" data-acao="lancar" data-valor="receita">${icone('mais')}<span>Entrada</span></button>
+          </div>
+        </div>
+        <button type="button" class="heroi-conta" data-acao="ver-saldo" aria-label="Ver como o saldo é calculado">
+          <span>${reais(comp.informado)} ${comp.desde ? `em ${dataCurta(comp.desde)}` : 'informado'}</span>
+          <span>+ ${reais(comp.entrou)} entrou</span>
+          <span>− ${reais(comp.saiu + comp.guardado)} saiu</span>
+          ${icone('direita')}
+        </button>
+        <div class="heroi-sub">Previsão para o fim de ${esc(mesNome)}: <b>${reais(fimMes.saldo)}</b>${ate ? ` <span class="heroi-delta">(${ate > 0 ? '+' : '−'} ${reais(Math.abs(ate))} até lá)</span>` : ''}</div>
         <div class="numeros">
-          <div class="numero"><small>Entradas do mês</small><strong>${reais(r.entradasCertas, { compacto: true })}</strong></div>
-          <div class="numero"><small>Saídas do mês</small><strong>${reais(r.saidas, { compacto: true })}</strong></div>
-          <div class="numero"><small>Sobra do mês</small><strong>${reais(r.sobra, { compacto: true })}</strong></div>
+          ${numero('Entradas do mês', r.entradasCertas, r.entrou, 'já entrou')}
+          ${numero('Saídas do mês', r.saidas, r.saiu, 'já saiu')}
+          <div class="numero"><small>Sobra do mês</small><strong>${compacto(r.sobra)}</strong>
+            <div class="mini sem-barra" aria-hidden="true"></div><small class="detalhe">entradas − saídas</small></div>
         </div>
       </section>
       ${alertas.length ? `<div class="pilha">${alertas.map((a) => `<div class="alerta ${a.nivel === 'critico' ? 'critico' : ''}">${icone('alerta')}<div><b>${esc(a.titulo)}</b><span>${esc(a.texto)}</span></div></div>`).join('')}</div>` : ''}
@@ -1198,6 +1221,27 @@
     </form>`, novo ? '#m-nome' : null);
   }
 
+  function folhaSaldo() {
+    const h = hoje();
+    const comp = Fin.composicaoSaldo(estado, h, ui.grupo);
+    const contas = vivos(estado, 'contas').filter((c) => c.tipo !== 'cartao' && (ui.grupo === 'Tudo' || c.grupo === ui.grupo));
+    const linha = (rotulo, valor, classe = '') => `<div class="${classe}"><dt>${rotulo}</dt><dd class="num">${valor}</dd></div>`;
+    abrirFolha(`${topoFolha('Como o saldo é calculado')}
+      <dl class="composicao">
+        ${linha(comp.desde ? `Saldo informado em ${dataBR(comp.desde)}` : 'Saldo informado', reais(comp.informado))}
+        ${linha('Entradas recebidas desde então', '+ ' + reais(comp.entrou), 'pos')}
+        ${linha('Saídas pagas e faturas vencidas', '− ' + reais(comp.saiu))}
+        ${comp.guardado ? linha('Guardado em metas', '− ' + reais(comp.guardado)) : ''}
+        ${linha('Saldo hoje', reais(comp.saldo), 'total')}
+      </dl>
+      <p class="nota">Só conta o que já aconteceu. Fixos não confirmados, contas em aberto e compras no cartão antes do vencimento ficam na previsão, por isso as entradas e saídas do mês podem ser maiores.</p>
+      <h3 style="margin-top:6px">Por conta</h3>
+      <div>${contas.map((c) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="editar-conta" data-id="${esc(c.id)}">
+        <span class="linha-texto"><b>${esc(c.nome)}</b><small>${reais(c.saldoInicial || 0)} informado${c.saldoData ? ' em ' + dataBR(c.saldoData) : ''} · tocar para corrigir</small></span>
+        <span class="linha-valor num">${reais(Fin.saldoConta(estado, c, h))}</span></button></div>`).join('')}</div>
+      <p class="nota">Se uma conta não bate com o banco, toque nela e informe o saldo de hoje.</p>`);
+  }
+
   function pedirConfirmacao(titulo, texto, rotulo, aoConfirmar) {
     ui.aoConfirmar = aoConfirmar;
     abrirFolha(`${topoFolha(titulo)}<p>${esc(texto)}</p>
@@ -1490,6 +1534,8 @@
   const acoes = {
     fechar: fecharFolha,
     novo: () => formularioNovo(),
+    lancar: (b) => formularioNovo({ tipo: b.dataset.valor }),
+    'ver-saldo': folhaSaldo,
     'novo-fixo': (b) => formularioNovo({ tipo: b.dataset.valor, repete: 'mensal' }),
     entrada: (b) => { ui.entrada = b.dataset.valor; desenhar(); },
     'comecar-zero': () => {
@@ -1822,12 +1868,30 @@
     if (e.target === folha()) fecharFolha();
   });
   folha().addEventListener('close', () => {
-    folha().innerHTML = '';
+    // O evento chega depois: se outra folha já abriu nesse meio-tempo, não a apaga.
+    if (!folha().open) folha().innerHTML = '';
     if (ui.redesenhar) desenhar();
   });
 
+  const PODE_NEGATIVO = new Set(['c-saldo', 'saldo-inicial']);
+  function pontuarValor(el, e) {
+    // Colado, preenchido automaticamente ou ditado: chega de uma vez, então lê o valor inteiro.
+    if (e.inputType === 'insertFromPaste' || e.inputType === 'insertReplacementText' || (e.data && e.data.length > 1)) {
+      const c = lerReais(el.value);
+      el.value = c ? (c < 0 && PODE_NEGATIVO.has(el.id) ? '-' : '') + valorParaCampo(Math.abs(c)) : '';
+      return;
+    }
+    const r = Fin.formatarDigitando(el.value, el.selectionStart == null ? el.value.length : el.selectionStart, {
+      digitouPonto: e.data === '.', virgulaDoPonto: el.dataset.virgulaDoPonto === '1', negativo: PODE_NEGATIVO.has(el.id),
+    });
+    el.value = r.texto;
+    el.dataset.virgulaDoPonto = r.virgulaDoPonto ? '1' : '';
+    try { el.setSelectionRange(r.cursor, r.cursor); } catch (erro) { /* campo sem cursor */ }
+  }
+
   document.addEventListener('input', (e) => {
     const id = e.target.id;
+    if (e.target.inputMode === 'decimal') pontuarValor(e.target, e);
     if (id === 'busca') {
       ui.texto = e.target.value;
       $('#lista-lancamentos').innerHTML = listaLancamentos();

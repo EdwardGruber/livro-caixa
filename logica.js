@@ -37,6 +37,50 @@
   }
 
   /* ---------- dinheiro ---------- */
+  /* Pontua o valor enquanto se digita: "10000" vira "10.000". O ponto entra sozinho, então um
+     ponto digitado vale como vírgula; se vierem 3 dígitos depois dele, era separador de milhar. */
+  const CURSOR = '\u0000';
+  function formatarDigitando(texto, cursor, { digitouPonto = false, virgulaDoPonto = false, negativo = false } = {}) {
+    let v = texto.slice(0, cursor) + CURSOR + texto.slice(cursor);
+    const menos = negativo && /^[^\d]*[-−]/.test(v);
+    if (digitouPonto && v.charAt(cursor - 1) === '.') {
+      const semEle = v.slice(0, cursor - 1) + v.slice(cursor);
+      if (semEle.includes(',')) v = semEle;
+      else {
+        v = v.slice(0, cursor - 1) + ',' + v.slice(cursor);
+        virgulaDoPonto = true;
+      }
+    }
+    const limpo = v.replace(/[^\d,\u0000]/g, '');
+    const i = limpo.indexOf(',');
+    let inteiro = i < 0 ? limpo : limpo.slice(0, i);
+    let decimais = i < 0 ? null : limpo.slice(i + 1).replace(/,/g, '');
+    if (decimais !== null && virgulaDoPonto && decimais.replace(CURSOR, '').length >= 3) {
+      inteiro += decimais;
+      decimais = null;
+    }
+    if (decimais === null) virgulaDoPonto = false;
+    if (decimais !== null) {
+      let n = 0;
+      decimais = [...decimais].filter((ch) => ch === CURSOR || (n < 2 && ++n)).join('');
+    }
+    inteiro = inteiro.replace(/^(\u0000?)0+(?=\u0000?\d)/, '$1');
+    let agrupado = '';
+    let digitos = 0;
+    for (let k = inteiro.length - 1; k >= 0; k--) {
+      const ch = inteiro[k];
+      if (ch !== CURSOR) {
+        if (digitos && digitos % 3 === 0) agrupado = '.' + agrupado;
+        digitos += 1;
+      }
+      agrupado = ch + agrupado;
+    }
+    if (!digitos && decimais !== null) agrupado = '0' + agrupado;
+    const saida = (menos ? '-' : '') + agrupado + (decimais !== null ? ',' + decimais : '');
+    const pos = saida.indexOf(CURSOR);
+    return { texto: saida.replace(CURSOR, ''), cursor: pos < 0 ? saida.length : pos, virgulaDoPonto };
+  }
+
   function lerReais(texto) {
     if (typeof texto === 'number') return Math.round(texto * 100);
     let t = String(texto || '').replace(/[^\d.,-]/g, '');
@@ -283,6 +327,22 @@
     return total;
   }
 
+  /* De onde vem o saldo de hoje: o que foi informado, mais o que entrou, menos o que saiu depois. */
+  function composicaoSaldo(estado, hoje, grupo) {
+    const contas = vivos(estado, 'contas').filter((c) => c.tipo !== 'cartao' && (!grupo || grupo === 'Tudo' || c.grupo === grupo));
+    const informado = contas.reduce((s, c) => s + (c.saldoInicial || 0), 0);
+    const datas = [...new Set(contas.filter((c) => c.saldoInicial || c.saldoData).map((c) => c.saldoData || null))];
+    const r = { informado, desde: datas.length === 1 ? datas[0] : null, entrou: 0, saiu: 0, guardado: 0 };
+    lancamentosReais(estado, grupo).forEach((l) => {
+      if (!liquidado(estado, l, hoje) || jaNoSaldo(estado, l)) return;
+      if (l.metaId) r.guardado += l.valor;
+      else if (l.tipo === 'receita') r.entrou += l.valor;
+      else r.saiu += l.valor;
+    });
+    r.saldo = r.informado + r.entrou - r.saiu - r.guardado;
+    return r;
+  }
+
   function saldoConta(estado, conta, hoje) {
     let total = conta.saldoInicial || 0;
     vivos(estado, 'lancamentos').forEach((l) => {
@@ -457,10 +517,15 @@
   }
 
   /* ---------- resumo do mês, por data do lançamento ---------- */
-  function resumoMes(estado, ym, grupo) {
+  /* Com "hoje", separa também o que já aconteceu do que ainda está previsto. */
+  function resumoMes(estado, ym, grupo, hoje) {
     const itens = itensDoMes(estado, ym, grupo);
-    const r = { entradasCertas: 0, entradasProvaveis: 0, saidas: 0, guardado: 0, porCategoria: {}, qtd: itens.length };
+    const r = { entradasCertas: 0, entradasProvaveis: 0, saidas: 0, guardado: 0, entrou: 0, saiu: 0, porCategoria: {}, qtd: itens.length };
     itens.forEach((i) => {
+      if (hoje && !i.metaId && liquidado(estado, i, hoje)) {
+        if (i.tipo === 'receita') r.entrou += i.valor;
+        else r.saiu += i.valor;
+      }
       if (i.metaId) {
         // Dinheiro guardado sai do saldo, mas não é gasto.
         r.guardado += i.valor;
@@ -598,7 +663,7 @@
     itensDoMes, saldoHoje, saldoConta, gastoVariavel, mediaVariavel, fluxosSimulacao, projetar,
     historicoSaldo, resumoMes, proximos, criarParcelas, parcelamentos, previsaoMeta, alertas,
     ehCartao, sinal, contaPagadora, dataDoSaldo, jaNoSaldo, dataDoPagamento, dataDoSaldoAntigo,
-    realDaOcorrencia, fixosDoCartaoVencidos, guardadoMeta, aporteDoMes,
+    realDaOcorrencia, fixosDoCartaoVencidos, guardadoMeta, aporteDoMes, composicaoSaldo, formatarDigitando,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Fin = api;

@@ -418,3 +418,49 @@ test('meta: dinheiro que sai da conta pesa na projeção até chegar ao alvo, e 
   e.metas.m.contaId = null;
   assert.equal(Fin.projetar(e, '2026-11-20', 12).metasMensal, 0);
 });
+
+test('composição do saldo fecha com o saldo de hoje e só conta o que já aconteceu', () => {
+  const e = base();
+  e.contas['ct-banco'].saldoData = '2026-11-02';
+  lanc(e, { valor: 99999, data: '2026-11-01' }); // anterior ao saldo informado
+  lanc(e, { tipo: 'receita', valor: 340000, data: '2026-11-05' });
+  lanc(e, { valor: 20000, data: '2026-11-04' });
+  lanc(e, { valor: 50000, data: '2026-11-20', pago: false }); // em aberto
+  lanc(e, { valor: 7000, data: '2026-10-10', contaId: 'visa' }); // fatura venceu 05/11
+  lanc(e, { valor: 8000, data: '2026-11-03', contaId: 'visa' }); // fatura vence 05/12
+  lanc(e, { valor: 10000, data: '2026-11-05', metaId: 'm' });
+  const c = Fin.composicaoSaldo(e, HOJE, 'Pessoal');
+  assert.deepEqual({ ...c }, { informado: 100000, desde: '2026-11-02', entrou: 340000, saiu: 27000, guardado: 10000, saldo: 403000 });
+  assert.equal(c.saldo, Fin.saldoHoje(e, HOJE, 'Pessoal'));
+  const tudo = Fin.composicaoSaldo(e, HOJE);
+  assert.equal(tudo.saldo, Fin.saldoHoje(e, HOJE));
+  assert.equal(tudo.desde, null);
+
+  const r = Fin.resumoMes(e, '2026-11', 'Tudo', HOJE);
+  assert.equal(r.entrou, 340000);
+  assert.equal(r.saiu, 99999 + 20000);
+  assert.equal(r.saidas, 99999 + 20000 + 50000 + 8000);
+});
+
+test('valor é pontuado enquanto se digita', () => {
+  const f = (texto, opcoes = {}) => Fin.formatarDigitando(texto, texto.length, opcoes);
+  assert.equal(f('10000').texto, '10.000');
+  assert.equal(f('1234567,89').texto, '1.234.567,89');
+  assert.equal(f('12,345').texto, '12,34');
+  assert.equal(f(',5').texto, '0,5');
+  assert.equal(f('007').texto, '7');
+  assert.equal(f('abc').texto, '');
+  assert.equal(f('-50', { negativo: true }).texto, '-50');
+  assert.equal(f('-50').texto, '50');
+  // Ponto digitado vira vírgula; com 3 dígitos depois, era milhar.
+  const ponto = f('1.', { digitouPonto: true });
+  assert.deepEqual(ponto, { texto: '1,', cursor: 2, virgulaDoPonto: true });
+  assert.equal(f('1,50', { virgulaDoPonto: true }).texto, '1,50');
+  assert.equal(f('1,500', { virgulaDoPonto: true }).texto, '1.500');
+  assert.equal(f('1.234,5.', { digitouPonto: true }).texto, '1.234,5');
+  // O cursor continua no mesmo dígito depois da pontuação.
+  assert.deepEqual(Fin.formatarDigitando('10500', 2), { texto: '10.500', cursor: 3, virgulaDoPonto: false });
+  // O que foi digitado é lido como o valor que aparece.
+  ['10.000', '1.234.567,89', '0,5', '1.500'].forEach((t) => assert.equal(Fin.lerReais(t), Fin.lerReais(f(t).texto)));
+  assert.equal(Fin.lerReais(f('10000').texto), 1000000);
+});
