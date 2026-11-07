@@ -39,7 +39,6 @@
     planejar: '<path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/>',
     ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
     mais: '<path d="M12 5v14M5 12h14"/>',
-    menos: '<path d="M5 12h14"/>',
     fechar: '<path d="M6 6l12 12M18 6L6 18"/>',
     esquerda: '<path d="M15 5l-7 7 7 7"/>',
     direita: '<path d="M9 5l7 7-7 7"/>',
@@ -554,8 +553,6 @@
     const r = Fin.resumoMes(estado, mesDe(h), ui.grupo, h);
     const proj = Fin.projetar(estado, h, 0, { grupo: ui.grupo });
     const fimMes = proj.finaisDeMes[0];
-    const comp = Fin.composicaoSaldo(estado, h, ui.grupo);
-    const ate = fimMes.saldo - comp.saldo;
     const mesNome = nomeMes(mesDe(h), true).split(' ')[0];
     const compacto = (v) => reais(v, { compacto: true });
     const numero = (rotulo, total, feito, textoFeito) => `<div class="numero"><small>${rotulo}</small><strong>${compacto(total)}</strong>
@@ -566,23 +563,11 @@
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
     return `
       <section class="heroi" aria-label="Resumo">
-        <div class="heroi-linha">
-          <div>
-            <div class="heroi-rotulo">${ui.area === 'conjunta' ? 'Saldo conjunto hoje' : 'Seu saldo hoje'}${ui.grupo !== 'Tudo' ? ' · ' + esc(ui.grupo) : ''}</div>
-            <div class="heroi-valor" id="saldo-heroi">${reais(Fin.saldoHoje(estado, h, ui.grupo))}</div>
-          </div>
-          <div class="heroi-atalhos">
-            <button type="button" class="atalho" data-acao="lancar" data-valor="despesa">${icone('menos')}<span>Saída</span></button>
-            <button type="button" class="atalho" data-acao="lancar" data-valor="receita">${icone('mais')}<span>Entrada</span></button>
-          </div>
-        </div>
-        <button type="button" class="heroi-conta" data-acao="ver-saldo" aria-label="Ver como o saldo é calculado">
-          <span>${reais(comp.informado)} ${comp.desde ? `em ${dataCurta(comp.desde)}` : 'informado'}</span>
-          <span>+ ${reais(comp.entrou)} entrou</span>
-          <span>− ${reais(comp.saiu + comp.guardado)} saiu</span>
-          ${icone('direita')}
+        <button type="button" class="heroi-saldo" data-acao="ver-saldo" title="Ver como o saldo é calculado">
+          <span class="heroi-rotulo">${ui.area === 'conjunta' ? 'Saldo conjunto hoje' : 'Seu saldo hoje'}${ui.grupo !== 'Tudo' ? ' · ' + esc(ui.grupo) : ''}${icone('direita')}</span>
+          <span class="heroi-valor" id="saldo-heroi">${reais(Fin.saldoHoje(estado, h, ui.grupo))}</span>
         </button>
-        <div class="heroi-sub">Previsão para o fim de ${esc(mesNome)}: <b>${reais(fimMes.saldo)}</b>${ate ? ` <span class="heroi-delta">(${ate > 0 ? '+' : '−'} ${reais(Math.abs(ate))} até lá)</span>` : ''}</div>
+        <div class="heroi-sub">Previsão para o fim de ${esc(mesNome)}: <b>${reais(fimMes.saldo)}</b></div>
         <div class="numeros">
           ${numero('Entradas do mês', r.entradasCertas, r.entrou, 'já entrou')}
           ${numero('Saídas do mês', r.saidas, r.saiu, 'já saiu')}
@@ -1545,7 +1530,6 @@
   const acoes = {
     fechar: fecharFolha,
     novo: () => formularioNovo(),
-    lancar: (b) => formularioNovo({ tipo: b.dataset.valor }),
     'ver-saldo': folhaSaldo,
     'novo-fixo': (b) => formularioNovo({ tipo: b.dataset.valor, repete: 'mensal' }),
     entrada: (b) => { ui.entrada = b.dataset.valor; desenhar(); },

@@ -140,24 +140,13 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .heroi > * { position: relative; z-index: 1; }
 .heroi-rotulo { font-size: 14px; font-weight: 500; opacity: .9; }
 .heroi-valor { font: 700 clamp(38px, 11vw, 56px)/1.08 var(--titulo); letter-spacing: -.025em; margin: 2px 0 6px; overflow-wrap: anywhere; }
-.heroi-sub { font-size: 14px; opacity: .92; margin-top: 10px; }
-.heroi-delta { opacity: .85; white-space: nowrap; }
-.heroi-linha { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 16px; }
-.heroi-linha > div:first-child { min-width: 0; }
-.heroi-atalhos { display: flex; gap: 8px; margin-bottom: 8px; }
-.atalho {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 14px;
-  border-radius: 12px; font-size: 14px; font-weight: 700; background: color-mix(in srgb, currentColor 14%, transparent); transition: background .15s;
-}
-.atalho:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
-.atalho svg { width: 18px; height: 18px; }
-.heroi-conta {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; width: 100%; margin-top: 4px; padding: 9px 12px;
-  border-radius: 12px; font-size: 13px; text-align: left; background: color-mix(in srgb, currentColor 10%, transparent); transition: background .15s;
-}
-.heroi-conta:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
-.heroi-conta span { white-space: nowrap; }
-.heroi-conta svg { width: 16px; height: 16px; margin-left: auto; opacity: .8; flex: none; }
+.heroi-sub { font-size: 14px; opacity: .92; }
+/* O saldo inteiro é o botão que abre o detalhe do cálculo. */
+.heroi-saldo { display: grid; justify-items: start; max-width: 100%; text-align: left; border-radius: 12px; }
+.heroi-saldo .heroi-rotulo { display: inline-flex; align-items: center; gap: 2px; }
+.heroi-saldo svg { width: 15px; height: 15px; opacity: .75; transition: transform .15s, opacity .15s; }
+.heroi-saldo:hover svg { transform: translateX(2px); opacity: 1; }
+.heroi-saldo .heroi-valor { display: block; }
 .numero .mini { height: 4px; margin: 7px 0 5px; border-radius: 2px; background: color-mix(in srgb, currentColor 22%, transparent); overflow: hidden; }
 .numero .mini span { display: block; height: 100%; border-radius: 2px; background: currentColor; }
 .numero .mini.sem-barra { background: none; }
@@ -170,10 +159,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .composicao .total { border-bottom: 0; font-size: 16px; }
 .composicao .total dt { color: var(--tinta); font-weight: 700; }
 .composicao .total dd { font-weight: 700; }
-@media (max-width: 560px) {
-  .heroi-atalhos { width: 100%; margin-bottom: 4px; }
-  .atalho { flex: 1 1 0; }
-}
+
 .numeros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .numero { min-width: 0; padding-top: 10px; border-top: 1px solid color-mix(in srgb, currentColor 30%, transparent); }
 .numero small { display: block; font-size: 12px; opacity: .88; }
