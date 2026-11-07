@@ -430,7 +430,9 @@ test('composição do saldo fecha com o saldo de hoje e só conta o que já acon
   lanc(e, { valor: 8000, data: '2026-11-03', contaId: 'visa' }); // fatura vence 05/12
   lanc(e, { valor: 10000, data: '2026-11-05', metaId: 'm' });
   const c = Fin.composicaoSaldo(e, HOJE, 'Pessoal');
-  assert.deepEqual({ ...c }, { informado: 100000, desde: '2026-11-02', entrou: 340000, saiu: 27000, guardado: 10000, saldo: 403000 });
+  const { antes, ...resto } = c;
+  assert.deepEqual(resto, { informado: 100000, desde: '2026-11-02', entrou: 340000, saiu: 27000, guardado: 10000, saldo: 403000 });
+  assert.deepEqual(antes.map((l) => l.valor), [99999]);
   assert.equal(c.saldo, Fin.saldoHoje(e, HOJE, 'Pessoal'));
   const tudo = Fin.composicaoSaldo(e, HOJE);
   assert.equal(tudo.saldo, Fin.saldoHoje(e, HOJE));

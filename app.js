@@ -522,6 +522,7 @@
       item.parcelaGrupo ? `<span class="etiqueta">${item.parcela}/${item.parcelas}</span>` : '',
       item.recorrenteId ? '<span class="etiqueta">Fixo</span>' : '',
       item.metaId ? '<span class="etiqueta">Meta</span>' : '',
+      feito && Fin.jaNoSaldo(estado, item) ? '<span class="etiqueta">Já no saldo</span>' : '',
       item.tipo === 'receita' && item.certeza === 'provavel' ? '<span class="etiqueta provavel">Provável</span>' : '',
       atrasado ? '<span class="etiqueta atraso">Vencido</span>' : '',
     ].join('');
@@ -1051,8 +1052,11 @@
     }
     if (f.modo === 'novo' && f.repete === 'parcelado' && f.data && f.data < hoje() && !cartao) textos.push('As parcelas já vencidas entram como pagas.');
     const umaVez = (f.modo === 'novo' || f.modo === 'editar') && f.repete !== 'mensal';
+    const corte = conta && Fin.dataDoSaldo(v, { contaId: f.contaId });
     if (umaVez && conta && f.data && Fin.jaNoSaldo(v, { contaId: f.contaId, data: f.data })) {
-      textos.push(`Esta data é anterior ao saldo informado em ${dataBR(Fin.dataDoSaldo(v, { contaId: f.contaId }))}: fica no histórico, mas não muda o saldo.`);
+      textos.push(`Esta data é anterior ao saldo informado em ${dataBR(corte)}: fica no histórico, mas não muda o saldo.`);
+    } else if (f.modo === 'novo' && f.repete === 'mensal' && corte && f.data && f.data < corte) {
+      textos.push(`O que tiver data anterior ao saldo informado em ${dataBR(corte)} fica no histórico, sem mudar o saldo.`);
     }
     if (dica) { dica.textContent = textos.join(' '); dica.hidden = !textos.length; }
     if (linha) {
@@ -1235,6 +1239,13 @@
         ${linha('Saldo hoje', reais(comp.saldo), 'total')}
       </dl>
       <p class="nota">Só conta o que já aconteceu. Fixos não confirmados, contas em aberto e compras no cartão antes do vencimento ficam na previsão, por isso as entradas e saídas do mês podem ser maiores.</p>
+      ${comp.antes.length ? `<h3 style="margin-top:6px">Já estavam no saldo informado</h3>
+      <p class="nota">Têm data anterior ao dia do saldo informado, então o valor informado já os incluía. Ficam no histórico e nos gráficos, mas não mudam o saldo de novo.</p>
+      <div>${comp.antes.slice(0, 8).map((l) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="abrir-item" data-id="${esc(l.id)}">
+        <span class="linha-texto"><b>${esc(l.descricao)}</b><small>${dataBR(Fin.dataCaixa(estado, l))} · ${esc(nomeConta(l.contaId))}</small></span>
+        <span class="linha-valor num ${l.tipo === 'receita' ? 'pos' : ''}">${l.tipo === 'receita' ? '+' : ''}${reais(l.valor)}</span></button></div>`).join('')}</div>
+      ${comp.antes.length > 8 ? `<p class="nota">E mais ${comp.antes.length - 8}.</p>` : ''}
+      <p class="nota">Se algum deles saiu ou entrou depois do saldo informado, abra e mude a data.</p>` : ''}
       <h3 style="margin-top:6px">Por conta</h3>
       <div>${contas.map((c) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="editar-conta" data-id="${esc(c.id)}">
         <span class="linha-texto"><b>${esc(c.nome)}</b><small>${reais(c.saldoInicial || 0)} informado${c.saldoData ? ' em ' + dataBR(c.saldoData) : ''} · tocar para corrigir</small></span>

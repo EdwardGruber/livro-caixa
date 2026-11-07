@@ -332,14 +332,19 @@
     const contas = vivos(estado, 'contas').filter((c) => c.tipo !== 'cartao' && (!grupo || grupo === 'Tudo' || c.grupo === grupo));
     const informado = contas.reduce((s, c) => s + (c.saldoInicial || 0), 0);
     const datas = [...new Set(contas.filter((c) => c.saldoInicial || c.saldoData).map((c) => c.saldoData || null))];
-    const r = { informado, desde: datas.length === 1 ? datas[0] : null, entrou: 0, saiu: 0, guardado: 0 };
+    const r = { informado, desde: datas.length === 1 ? datas[0] : null, entrou: 0, saiu: 0, guardado: 0, antes: [] };
     lancamentosReais(estado, grupo).forEach((l) => {
-      if (!liquidado(estado, l, hoje) || jaNoSaldo(estado, l)) return;
+      if (!liquidado(estado, l, hoje)) return;
+      if (jaNoSaldo(estado, l)) {
+        r.antes.push(l);
+        return;
+      }
       if (l.metaId) r.guardado += l.valor;
       else if (l.tipo === 'receita') r.entrou += l.valor;
       else r.saiu += l.valor;
     });
     r.saldo = r.informado + r.entrou - r.saiu - r.guardado;
+    r.antes.sort((a, b) => (dataCaixa(estado, a) < dataCaixa(estado, b) ? 1 : -1));
     return r;
   }
 
