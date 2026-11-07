@@ -349,7 +349,7 @@
     return `<div class="boas-vindas"><div>
       <h1>Quanto você tem hoje?</h1>
       <p class="mudo">Some o saldo da sua conta principal. Dá para ajustar depois e criar outras contas e cartões em Ajustes.</p>
-      <label class="campo"><span>Saldo atual da conta</span><div class="valor-grande"><span>R$</span><input id="saldo-inicial" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div></label>
+      <label class="campo"><span>Saldo atual da conta</span><div class="com-sinal"><div class="valor-grande"><span>R$</span><input id="saldo-inicial" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div><button type="button" class="btn sinal" data-acao="inverter-sinal" data-alvo="saldo-inicial" aria-label="Trocar entre saldo positivo e negativo">±</button></div></label>
       <button type="button" class="btn primario" data-acao="comecar">Abrir minhas finanças</button>
     </div></div>`;
   }
@@ -1192,7 +1192,7 @@
       </div>
       <div data-sem-cartao style="display:grid;gap:6px" ${c.tipo === 'cartao' ? 'hidden' : ''}>
         <div class="grade-2">
-          <label class="campo"><span>Saldo</span><input id="c-saldo" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(valorParaCampo(c.saldoInicial))}"></label>
+          <label class="campo"><span>Saldo</span><span class="com-sinal"><input id="c-saldo" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc((c.saldoInicial < 0 ? '-' : '') + valorParaCampo(Math.abs(c.saldoInicial || 0)))}"><button type="button" class="btn sinal" data-acao="inverter-sinal" data-alvo="c-saldo" aria-label="Trocar entre saldo positivo e negativo">±</button></span></label>
           <label class="campo"><span>Saldo do dia</span><input id="c-saldo-data" type="date" max="${hoje()}" value="${esc(c.saldoData || '')}"></label>
         </div>
         <span class="dica-campo">Lançamentos anteriores a este dia já estão nesse saldo e não o alteram.</span>
@@ -1567,6 +1567,14 @@
     fechar: fecharFolha,
     novo: () => formularioNovo(),
     'ver-saldo': folhaSaldo,
+    'inverter-sinal': (b) => {
+      const campo = $('#' + b.dataset.alvo);
+      if (!campo) return;
+      const v = campo.value.trim();
+      campo.value = /^[-−]/.test(v) ? v.replace(/^[-−]\s*/, '') : '-' + v;
+      campo.dispatchEvent(new Event('input', { bubbles: true }));
+      campo.focus();
+    },
     'novo-fixo': (b) => formularioNovo({ tipo: b.dataset.valor, repete: 'mensal' }),
     entrada: (b) => { ui.entrada = b.dataset.valor; desenhar(); },
     'comecar-zero': () => {
@@ -1973,6 +1981,8 @@
   window.addEventListener('storage', (e) => {
     if (e.key === CHAVE && recarregarSeMudou()) desenharSePossivel();
   });
+  // Tema automático: o brilho dos gráficos depende de claro ou escuro, então redesenha ao mudar.
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => desenharSePossivel()); } catch (e) { /* navegador antigo */ }
   window.addEventListener('online', () => agendarSinc(200));
   window.addEventListener('offline', () => { sinc.situacao = 'offline'; pintarSelo(); });
   document.addEventListener('visibilitychange', () => {

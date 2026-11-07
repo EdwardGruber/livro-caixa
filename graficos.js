@@ -103,6 +103,15 @@
 
   const novoId = () => Math.random().toString(36).slice(2, 8);
 
+  /* Brilho só no tema escuro. É um filtro do próprio SVG, porque o Safari ignora o
+     drop-shadow do CSS em linhas e barras de SVG. A área cobre o desenho todo, para
+     linhas retas (sem altura) não ficarem cortadas. */
+  const temBrilho = (el) => parseFloat(getComputedStyle(el).getPropertyValue('--glow')) > 0;
+  const filtroBrilho = (id, w, h, desvio, forca = 1) => `<filter id="${id}" filterUnits="userSpaceOnUse" x="-20" y="-20" width="${w + 40}" height="${h + 40}">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="${desvio}" result="b"/>
+    <feComponentTransfer in="b" result="c"><feFuncA type="linear" slope="${forca}"/></feComponentTransfer>
+    <feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+
   /* Degradê vertical da cor da série até transparente, para áreas e barras. */
   const degrade = (id, cor, topo, base = 0) => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" style="stop-color:${cor};stop-opacity:${topo}"/><stop offset="1" style="stop-color:${cor};stop-opacity:${base}"/></linearGradient>`;
@@ -145,12 +154,14 @@
       const grade = ticks.map((t) => `<line class="${t === 0 ? 'zero' : 'grade'}" x1="${m.l}" x2="${w - m.r}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${m.l - 6}" y="${Y(t) + 4}" text-anchor="end">${esc(eixoReais(t))}</text>`).join('');
       const rotX = cfg.rotulos.map((r, i) => {
         const obrigatorio = i === cfg.indiceHoje;
-        if (!obrigatorio && (i % passo !== 0 || (cfg.indiceHoje != null && Math.abs(i - cfg.indiceHoje) < passo))) return '';
+        if (!obrigatorio && (i % passo !== 0 || (cfg.indiceHoje != null && Math.abs(i - cfg.indiceHoje) <= passo))) return '';
         const ancora = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
         return `<text x="${X(i)}" y="${h - 6}" text-anchor="${ancora}">${esc(r)}</text>`;
       }).join('');
 
-      const defs = efeitos ? cfg.series.map((s, j) => degrade(`a${uid}${j}`, s.cor, s.area ? 0.38 : 0.12)).join('') : '';
+      const brilho = efeitos && temBrilho(plot);
+      const defs = (efeitos ? cfg.series.map((s, j) => degrade(`a${uid}${j}`, s.cor, s.area ? 0.38 : 0.12)).join('') : '')
+        + (brilho ? filtroBrilho(`l${uid}`, w, h, 3.2, 0.9) : '');
       const chao = Y(Math.max(yMin, 0));
       const caminhos = cfg.series.map((s, j) => {
         const pontos = s.valores.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(Boolean);
@@ -162,7 +173,7 @@
         else if (pontos.length > 1 && s.area) area = `<path d="${d}${fechar}" fill="${s.cor}" opacity=".1"/>`;
         const fimP = pontos[pontos.length - 1];
         const ponto = `<circle cx="${fimP[0]}" cy="${fimP[1]}" r="4" fill="${s.cor}" stroke="var(--superficie)" stroke-width="2"/>`;
-        return `${area}<path${efeitos ? ` class="brilha" style="--c:${s.cor}"` : ''} d="${d}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.tracejado ? ' stroke-dasharray="6 5"' : ''}/>${ponto}`;
+        return `${area}<path${brilho ? ` filter="url(#l${uid})"` : ''} d="${d}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.tracejado ? ' stroke-dasharray="6 5"' : ''}/>${ponto}`;
       }).join('');
 
       const hoje = cfg.indiceHoje != null ? `<line class="zero linha-hoje" x1="${X(cfg.indiceHoje)}" x2="${X(cfg.indiceHoje)}" y1="${m.t}" y2="${h - m.b}"/>` : '';
@@ -230,7 +241,9 @@
       const grade = ticks.map((t) => `<line class="${t === 0 ? 'zero' : 'grade'}" x1="${m.l}" x2="${w - m.r}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${m.l - 6}" y="${Y(t) + 4}" text-anchor="end">${esc(eixoReais(t))}</text>`).join('');
       const uid = novoId();
       const efeitos = !cfg.pdf;
-      const defs = efeitos ? cfg.series.map((s, j) => degrade(`b${uid}${j}`, s.cor, 1, 0.35)).join('') : '';
+      const brilho = efeitos && temBrilho(plot);
+      const defs = (efeitos ? cfg.series.map((s, j) => degrade(`b${uid}${j}`, s.cor, 1, 0.35)).join('') : '')
+        + (brilho ? filtroBrilho(`g${uid}`, w, h, 2.6, 0.55) : '');
       const xBarra = (i, j) => m.l + banda * i + (banda - (k * larg + (k - 1) * 2)) / 2 + j * (larg + 2);
 
       const barras = cfg.rotulos.map((_, i) => cfg.series.map((s, j) => {
@@ -241,9 +254,8 @@
         const r = Math.min(4, larg / 2, base - y);
         const d = `M${x} ${base}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + larg - r}Q${x + larg} ${y} ${x + larg} ${y + r}V${base}Z`;
         const previsto = cfg.indiceFuturo != null && i >= cfg.indiceFuturo;
-        const classes = [efeitos ? 'brilha-barra' : '', animar ? 'cresce' : ''].filter(Boolean).join(' ');
-        const estilo = [efeitos ? `--c:${s.cor}` : '', animar ? `animation-delay:${i * 35}ms` : ''].filter(Boolean).join(';');
-        return `<path d="${d}" fill="${efeitos ? `url(#b${uid}${j})` : s.cor}"${previsto ? ' opacity=".45"' : ''}${classes ? ` class="${classes}"` : ''}${estilo ? ` style="${estilo}"` : ''}/>`;
+        const extras = (brilho ? ` filter="url(#g${uid})"` : '') + (animar ? ` class="cresce" style="animation-delay:${i * 35}ms"` : '');
+        return `<path d="${d}" fill="${efeitos ? `url(#b${uid}${j})` : s.cor}"${previsto ? ' opacity=".45"' : ''}${extras}/>`;
       }).join('')).join('');
 
       const rotX = cfg.rotulos.map((r, i) => (i % passo === 0 ? `<text x="${m.l + banda * i + banda / 2}" y="${h - 6}" text-anchor="middle">${esc(r)}</text>` : '')).join('');
@@ -298,9 +310,9 @@
       const a = animarAgora;
       animarAgora = false;
       el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true">
-        <defs>${degrade(`f${uid}`, 'var(--heroi-acento)', 0.32)}</defs>
+        <defs>${degrade(`f${uid}`, 'var(--heroi-acento)', 0.32)}${temBrilho(el) ? filtroBrilho(`h${uid}`, w, h, 3.5, 0.9) : ''}</defs>
         <path${a ? ' class="surge" style="--atraso:.5s"' : ''} d="${dTudo}L${pontos[pontos.length - 1][0].toFixed(1)} ${h}L${pontos[0][0].toFixed(1)} ${h}Z" fill="url(#f${uid})"/>
-        ${passado.length > 1 ? `<path class="brilha${a ? ' desenha' : ''}" pathLength="1" style="--c:var(--heroi-acento)" d="${dPassado}" fill="none" stroke="var(--heroi-acento)" stroke-width="2.2" stroke-linecap="round"/>` : ''}
+        ${passado.length > 1 ? `<path${a ? ' class="desenha"' : ''}${temBrilho(el) ? ` filter="url(#h${uid})"` : ''} pathLength="1" d="${dPassado}" fill="none" stroke="var(--heroi-acento)" stroke-width="2.2" stroke-linecap="round"/>` : ''}
         ${dFuturo ? `<path${a ? ' class="surge" style="--atraso:1.15s"' : ''} d="${dFuturo}" fill="none" stroke="var(--heroi-acento)" stroke-width="1.6" stroke-dasharray="5 5" opacity=".7"/>` : ''}
         <g class="aceso${a ? ' surge' : ''}" style="--c:var(--heroi-acento);--atraso:1.05s"><circle class="halo" cx="${hoje[0]}" cy="${hoje[1]}" r="9" fill="var(--heroi-acento)"/>
           <circle cx="${hoje[0]}" cy="${hoje[1]}" r="4" fill="var(--heroi-acento)"/></g>
