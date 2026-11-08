@@ -217,7 +217,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .numero .mini { height: 4px; margin: 7px 0 5px; border-radius: 2px; background: color-mix(in srgb, currentColor 22%, transparent); overflow: hidden; }
 .numero .mini span { display: block; height: 100%; border-radius: 2px; background: var(--heroi-acento); box-shadow: 0 0 var(--glow) var(--heroi-acento); transform-origin: left; }
 .anima .numero .mini span { animation: enche .9s cubic-bezier(.2, .8, .2, 1) .35s both; }
-.numero .mini.sem-barra { background: none; }
+.numero.estouro .mini span { background: #ff8a80; box-shadow: 0 0 var(--glow) #ff8a80; }
 .numero small.detalhe { font-size: 11.5px; opacity: .85; overflow-wrap: anywhere; }
 .composicao { display: grid; margin: 0; }
 .composicao > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--linha); font-size: 14px; }

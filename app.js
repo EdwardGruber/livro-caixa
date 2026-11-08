@@ -584,12 +584,15 @@
     const fimMes = proj.finaisDeMes[0];
     const mesNome = nomeMes(mesDe(h), true).split(' ')[0];
     const compacto = (v) => reais(v, { compacto: true });
-    const numero = (rotulo, total, feito, textoFeito) => {
-      const pct = total > 0 ? Math.min(100, Math.round((feito / total) * 100)) : 0;
-      return `<div class="numero"><small>${rotulo}</small><strong data-valor="${total}">${compacto(total)}</strong>
-        <div class="mini" aria-hidden="true"><span style="width:${pct}%"></span></div>
-        <small class="detalhe" title="${compacto(feito)} ${textoFeito}">${pct}% ${textoFeito}</small></div>`;
-    };
+    // Saídas e sobra são medidas contra as entradas do mês; entradas, contra o que já foi recebido.
+    const numero = (rotulo, valor, pctBarra, detalhe, titulo, estouro = false) => `<div class="numero${estouro ? ' estouro' : ''}">
+        <small>${rotulo}</small><strong data-valor="${valor}">${compacto(valor)}</strong>
+        <div class="mini" aria-hidden="true"><span style="width:${Math.max(0, Math.min(100, pctBarra))}%"></span></div>
+        <small class="detalhe" title="${esc(titulo)}">${detalhe}</small></div>`;
+    const base = r.entradasCertas;
+    const dasEntradas = (v) => (base > 0 ? (v / base) * 100 : 0);
+    const textoPct = (p) => (p > 0 && p < 1 ? 'menos de 1%' : `${Math.round(p)}%`);
+    const recebido = base > 0 ? Math.min(100, (r.entrou / base) * 100) : 0;
     const alertas = Fin.alertas(estado, h, ui.grupo);
     const prox = Fin.proximos(estado, h, 30, ui.grupo, { entradas: true }).slice(0, 7);
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
@@ -602,10 +605,9 @@
         </button>
         <div class="heroi-sub">Previsão para o fim de ${esc(mesNome)}: <b>${reais(fimMes.saldo)}</b></div>
         <div class="numeros">
-          ${numero('Entradas<span class="so-largo"> do mês</span>', r.entradasCertas, r.entrou, 'entrou')}
-          ${numero('Saídas<span class="so-largo"> do mês</span>', r.saidas, r.saiu, 'saiu')}
-          <div class="numero"><small>Sobra<span class="so-largo"> do mês</span></small><strong data-valor="${r.sobra}">${compacto(r.sobra)}</strong>
-            <div class="mini sem-barra" aria-hidden="true"></div><small class="detalhe">prevista</small></div>
+          ${numero('Entradas<span class="so-largo"> do mês</span>', base, recebido, `${textoPct(recebido)} recebido`, `${compacto(r.entrou)} já recebido`)}
+          ${numero('Saídas<span class="so-largo"> do mês</span>', r.saidas, dasEntradas(r.saidas), base > 0 ? `${textoPct(dasEntradas(r.saidas))} das entradas` : 'sem entradas no mês', `${compacto(r.saiu)} já saiu`, r.saidas > base)}
+          ${numero('Sobra<span class="so-largo"> do mês</span>', r.sobra, dasEntradas(Math.max(0, r.sobra)), r.sobra < 0 ? 'saídas maiores' : base > 0 ? `${textoPct(dasEntradas(r.sobra))} das entradas` : '—', 'Entradas menos saídas do mês', r.sobra < 0)}
         </div>
       </section>
       ${alertas.length ? `<div class="pilha">${alertas.map((a) => `<div class="alerta ${a.nivel === 'critico' ? 'critico' : ''}">${icone('alerta')}<div><b>${esc(a.titulo)}</b><span>${esc(a.texto)}</span></div></div>`).join('')}</div>` : ''}
