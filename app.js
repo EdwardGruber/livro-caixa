@@ -271,7 +271,10 @@
 
   const grupos = () => [...new Set(vivos(estado, 'contas').map((c) => c.grupo || 'Pessoal'))];
   const CATEGORIA_META = 'meta';
-  const nomeCategoria = (id) => (id === CATEGORIA_META ? 'Meta' : estado.categorias[id] ? estado.categorias[id].nome : 'Sem categoria');
+  const CATEGORIA_TRANSF = 'transferencia';
+  const CATEGORIA_CONJ = 'conjunta';
+  const CATEGORIAS_FIXAS = { [CATEGORIA_META]: 'Meta', [CATEGORIA_TRANSF]: 'Transferência', [CATEGORIA_CONJ]: 'Conjunta' };
+  const nomeCategoria = (id) => CATEGORIAS_FIXAS[id] || (estado.categorias[id] ? estado.categorias[id].nome : 'Sem categoria');
   const nomeConta = (id) => (estado.contas[id] ? estado.contas[id].nome : 'Conta removida');
 
   function segmento(acao, atual, opcoes, classe = '') {
@@ -344,6 +347,40 @@
 
   /* ---------- boas-vindas ---------- */
   const nomePerfil = (id) => (banco.estado.perfis[id] || {}).nome || 'Sem nome';
+
+  /* ---------- casal: áreas, contas de qualquer área e pares de lançamentos ---------- */
+  const outraPessoa = () => (banco.perfil === Fin.AREA_SEGUNDA ? Fin.AREA_PRIMEIRA : Fin.AREA_SEGUNDA);
+  const temSegundaPessoa = () => !!banco.estado.perfis[Fin.AREA_SEGUNDA];
+  const rotuloArea = (area) => (area === AREA_CONJUNTA ? 'Conjunta' : nomePerfil(area));
+  const contaGlobal = (id) => banco.estado.contas[id];
+  const contasDaArea = (area, { cartao = true } = {}) => vivos(visao(area), 'contas').filter((c) => cartao || c.tipo !== 'cartao');
+  /* Nome da conta com o dono, para ficar claro dos dois lados de uma transferência. */
+  function rotuloConta(c) {
+    if (!c) return 'Conta removida';
+    const area = Fin.areaDe(c);
+    return area === AREA_CONJUNTA ? c.nome : `${c.nome} de ${nomePerfil(area)}`;
+  }
+  const parDe = (reg, colecao = 'lancamentos') => (reg && reg.parId ? banco.estado[colecao][reg.parId] : null);
+  const divisaoP1 = () => {
+    const c = banco.estado.config['geral-conjunta'];
+    return c && c.divisaoP1 != null ? c.divisaoP1 : 50;
+  };
+
+  /* Confirma uma ocorrência de fixo; se ela for metade de uma transferência, confirma a outra metade. */
+  function confirmarOcorrencia(o, extras = {}) {
+    gravar('lancamentos', realDaOcorrencia(o, extras));
+    if (!o.parRecorrente) return;
+    const recPar = banco.estado.recorrentes[o.parRecorrente];
+    if (!recPar || recPar.excluido) return;
+    const vPar = visao(Fin.areaDe(recPar));
+    const oPar = Fin.ocorrencias(vPar, o.competencia).find((x) => x.recorrenteId === recPar.id && x.competencia === o.competencia);
+    if (oPar) {
+      gravar('lancamentos', realDaOcorrencia(oPar, {
+        ...(extras.valor ? { valor: extras.valor } : {}),
+        ...(extras.data ? { data: Fin.dataDoPagamento(vPar, { ...oPar, data: extras.data }) } : {}),
+      }));
+    }
+  }
 
   function telaSaldo() {
     return `<div class="boas-vindas"><div>
@@ -539,29 +576,34 @@
   /* ---------- linha de lançamento ---------- */
   function linhaItem(item, opcoes = {}) {
     const h = hoje();
-    const cartao = Fin.ehCartao(estado, item);
-    const feito = Fin.liquidado(estado, item, h);
-    const quando = Fin.dataCaixa(estado, item);
+    // Gasto da conjunta pago do bolso: o estado de pago e a conta são os do lançamento espelho.
+    const espelho = item.semCaixa ? parDe(item) : null;
+    const vEspelho = espelho ? visao(Fin.areaDe(espelho)) : null;
+    const cartao = espelho ? Fin.ehCartao(vEspelho, espelho) : Fin.ehCartao(estado, item);
+    const feito = espelho ? Fin.liquidado(vEspelho, espelho, h) : Fin.liquidado(estado, item, h);
+    const quando = espelho ? Fin.dataCaixa(vEspelho, espelho) : Fin.dataCaixa(estado, item);
     const atrasado = !feito && quando < h;
-    const partes = [nomeCategoria(item.categoriaId), nomeConta(item.contaId)];
+    const partes = [nomeCategoria(item.categoriaId), item.pagoPor ? `pago por ${nomePerfil(item.pagoPor)}` : nomeConta(item.contaId)];
     if (cartao) partes.push(`fatura ${dataCurta(quando)}`);
     if (opcoes.comData) partes.unshift(dataCurta(item.data));
     const etiquetas = [
       item.parcelaGrupo ? `<span class="etiqueta">${item.parcela}/${item.parcelas}</span>` : '',
       item.recorrenteId ? '<span class="etiqueta">Fixo</span>' : '',
       item.metaId ? '<span class="etiqueta">Meta</span>' : '',
+      item.transferencia ? `<span class="etiqueta">${item.acerto ? 'Acerto' : 'Transferência'}</span>` : '',
+      item.espelho ? '<span class="etiqueta">Conjunta</span>' : '',
       feito && Fin.jaNoSaldo(estado, item) ? '<span class="etiqueta">Já no saldo</span>' : '',
       item.tipo === 'receita' && item.certeza === 'provavel' ? '<span class="etiqueta provavel">Provável</span>' : '',
       atrasado ? '<span class="etiqueta atraso">Vencido</span>' : '',
     ].join('');
     const rotuloCheck = item.tipo === 'receita' ? 'recebido' : 'pago';
-    const check = cartao
+    const check = cartao || espelho
       ? `<span class="check so-marca" aria-hidden="true" ${feito ? 'aria-pressed="true"' : ''}>${icone('check')}</span>`
       : `<button type="button" class="check" data-acao="alternar" data-id="${esc(item.id)}" aria-pressed="${feito}" aria-label="Marcar ${esc(item.descricao)} como ${rotuloCheck}">${icone('check')}</button>`;
     return `<div class="linha-item">${check}
       <button type="button" class="linha-corpo" data-acao="abrir-item" data-id="${esc(item.id)}">
         <span class="linha-texto"><b>${esc(item.descricao)}${etiquetas}</b><small>${esc(partes.join(' · '))}</small></span>
-        <span class="linha-valor num ${item.tipo === 'receita' ? 'pos' : 'saida'}">${item.tipo === 'receita' ? '+' : '−'}${reais(item.valor)}</span>
+        <span class="linha-valor num ${Fin.soMudouDeConta(item) ? 'transf' : item.tipo === 'receita' ? 'pos' : 'saida'}">${item.tipo === 'receita' ? '+' : '−'}${reais(item.valor)}</span>
       </button></div>`;
   }
 
@@ -597,6 +639,7 @@
     const prox = Fin.proximos(estado, h, 30, ui.grupo, { entradas: true }).slice(0, 7);
     const categorias = vivos(estado, 'categorias').filter((c) => c.tipo === 'despesa' && c.limite > 0);
     return `
+      ${ui.area === 'conjunta' ? '' : avisoAcertoPessoal()}
       <section class="heroi" aria-label="Resumo">
         <div class="heroi-faisca" id="heroi-faisca" aria-hidden="true"></div>
         <button type="button" class="heroi-saldo" data-acao="ver-saldo" title="Ver como o saldo é calculado">
@@ -611,6 +654,7 @@
         </div>
       </section>
       ${alertas.length ? `<div class="pilha">${alertas.map((a) => `<div class="alerta ${a.nivel === 'critico' ? 'critico' : ''}">${icone('alerta')}<div><b>${esc(a.titulo)}</b><span>${esc(a.texto)}</span></div></div>`).join('')}</div>` : ''}
+      ${ui.area === 'conjunta' && temSegundaPessoa() ? cartaoAcerto() : ''}
       <div class="colunas">
         <section class="cartao">
           <div class="cartao-topo">
@@ -631,6 +675,34 @@
         </div>
       </div>`;
   };
+
+  /* Quem deve a quem: positivo, a segunda pessoa deve à primeira. */
+  function situacaoAcerto() {
+    const saldo = Fin.acertoConjunta(banco.estado, hoje(), divisaoP1());
+    if (!saldo) return null;
+    const devedor = saldo > 0 ? Fin.AREA_SEGUNDA : Fin.AREA_PRIMEIRA;
+    return { valor: Math.abs(saldo), devedor, credor: devedor === Fin.AREA_PRIMEIRA ? Fin.AREA_SEGUNDA : Fin.AREA_PRIMEIRA };
+  }
+
+  function cartaoAcerto() {
+    const s = situacaoAcerto();
+    const p1 = divisaoP1();
+    return `<section class="cartao">
+      <div class="cartao-topo"><div><h2>Acerto entre vocês</h2><p class="nota">Gastos da conjunta pagos do próprio bolso, divididos ${p1}% ${esc(nomePerfil(Fin.AREA_PRIMEIRA))} e ${100 - p1}% ${esc(nomePerfil(Fin.AREA_SEGUNDA))}. <a class="link" href="#ajustes">Mudar</a></p></div>
+      </div>
+      <p class="acerto-frase">${s ? `<b>${esc(nomePerfil(s.devedor))}</b> deve <b class="num">${reais(s.valor)}</b> para <b>${esc(nomePerfil(s.credor))}</b>.` : 'Vocês estão quites.'}</p>
+      ${s ? '<button type="button" class="btn primario" data-acao="registrar-acerto" style="margin-top:12px">Registrar acerto</button>' : ''}
+    </section>`;
+  }
+
+  function avisoAcertoPessoal() {
+    if (!temSegundaPessoa()) return '';
+    const s = situacaoAcerto();
+    if (!s || (s.devedor !== banco.perfil && s.credor !== banco.perfil)) return '';
+    const outro = nomePerfil(outraPessoa());
+    const texto = s.credor === banco.perfil ? `${outro} te deve ${reais(s.valor)}` : `Você deve ${reais(s.valor)} para ${outro}`;
+    return `<div class="alerta">${icone('alerta')}<div><b>${esc(texto)}</b><span>Pelos gastos da Conjunta pagos do próprio bolso. O acerto fica na área Conjunta.</span></div></div>`;
+  }
 
   function linhaProximo(i) {
     const entrada = i.tipo === 'receita';
@@ -715,8 +787,9 @@
   vistas.fixos = () => {
     const h = hoje();
     const recs = vivos(estado, 'recorrentes').filter((r) => (ui.grupo === 'Tudo' || (estado.contas[r.contaId] || {}).grupo === ui.grupo) && (!r.fim || r.fim >= mesDe(h)));
-    const saidas = recs.filter((r) => r.tipo === 'despesa');
-    const entradas = recs.filter((r) => r.tipo === 'receita');
+    const transfs = recs.filter((r) => r.transferencia);
+    const saidas = recs.filter((r) => r.tipo === 'despesa' && !r.transferencia);
+    const entradas = recs.filter((r) => r.tipo === 'receita' && !r.transferencia);
     const totalS = saidas.reduce((s, r) => s + r.valor, 0);
     const totalE = entradas.filter((r) => r.certeza !== 'provavel').reduce((s, r) => s + r.valor, 0);
     const parc = Fin.parcelamentos(estado, h, ui.grupo).filter((p) => p.restante > 0);
@@ -725,7 +798,7 @@
       .sort((a, b) => (a.data < b.data ? -1 : 1));
     const linhaFixo = (r) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="editar-fixo" data-id="${esc(r.id)}">
         <span class="linha-texto"><b>${esc(r.descricao)}${r.certeza === 'provavel' ? '<span class="etiqueta provavel">Provável</span>' : ''}</b><small>Dia ${Number(r.inicio.slice(8, 10))} · ${esc(nomeCategoria(r.categoriaId))} · ${esc(nomeConta(r.contaId))}${r.fim ? ' · até ' + esc(nomeMes(r.fim)) : ''}</small></span>
-        <span class="linha-valor num ${r.tipo === 'receita' ? 'pos' : 'saida'}">${r.tipo === 'receita' ? '+' : '−'}${reais(r.valor)}</span></button></div>`;
+        <span class="linha-valor num ${Fin.soMudouDeConta(r) ? 'transf' : r.tipo === 'receita' ? 'pos' : 'saida'}">${r.tipo === 'receita' ? '+' : '−'}${reais(r.valor)}</span></button></div>`;
     return `<div class="colunas">
       <div class="pilha">
         <section class="cartao">
@@ -736,6 +809,10 @@
           <div class="cartao-topo"><div><h2>Entradas fixas</h2><p class="nota">${reais(totalE)} por mês em entradas certas</p></div></div>
           ${entradas.length ? entradas.sort((a, b) => b.valor - a.valor).map(linhaFixo).join('') : `<div class="vazio"><span>Salário, pró-labore, honorários mensais.</span><button type="button" class="btn" data-acao="novo-fixo" data-valor="receita">Adicionar entrada fixa</button></div>`}
         </section>
+        ${transfs.length ? `<section class="cartao">
+          <div class="cartao-topo"><div><h2>Transferências fixas</h2><p class="nota">Repetem todo mês, como o depósito na conjunta.</p></div></div>
+          ${transfs.sort((a, b) => b.valor - a.valor).map(linhaFixo).join('')}
+        </section>` : ''}
       </div>
       <div class="pilha">
         <section class="cartao">
@@ -893,6 +970,14 @@
         <div class="cartao-topo"><div><h2>Este aparelho é de ${esc(nomePerfil(banco.perfil))}</h2><p class="nota">Contas, categorias e limites abaixo são da área aberta: ${ui.area === 'conjunta' ? 'Conjunta' : 'Minhas'}.</p></div>
           <div class="acoes"><button type="button" class="btn" data-acao="trocar-perfil">Trocar de pessoa</button><button type="button" class="btn" data-acao="editar-nomes">Editar nomes</button></div></div>
       </section>
+      ${ui.area === 'conjunta' && temSegundaPessoa() ? `<section class="cartao">
+        <div class="cartao-topo"><div><h2>Divisão dos gastos da conjunta</h2><p class="nota">Vale para os gastos da conjunta que um de vocês paga do próprio bolso.</p></div></div>
+        <form data-form="divisao" novalidate class="barra-filtros">
+          <label class="campo"><span>Parte de ${esc(nomePerfil(Fin.AREA_PRIMEIRA))} (%)</span><input id="d-p1" type="number" inputmode="numeric" min="0" max="100" value="${divisaoP1()}"></label>
+          <button type="submit" class="btn" style="align-self:end">Salvar</button>
+        </form>
+        <p class="nota" id="d-p2" style="margin-top:6px">${esc(nomePerfil(Fin.AREA_SEGUNDA))} fica com ${100 - divisaoP1()}%.</p>
+      </section>` : ''}
       <div class="colunas">
       <div class="pilha">
         <section class="cartao">
@@ -974,7 +1059,7 @@
     const h = hoje();
     const contas = vivos(estado, 'contas');
     const preferida = (ui.grupo !== 'Tudo' && contas.find((c) => c.grupo === ui.grupo && c.tipo !== 'cartao')) || contas.find((c) => c.tipo !== 'cartao') || contas[0];
-    form = { modo: 'novo', area: areaAtiva(), tipo: 'despesa', valorTxt: '', descricao: '', categoriaId: '', contaId: preferida ? preferida.id : '', data: h, repete: 'uma', parcelas: 2, fim: '', certeza: 'certa', pago: true, ...extras };
+    form = { modo: 'novo', area: areaAtiva(), tipo: 'despesa', valorTxt: '', descricao: '', categoriaId: '', contaId: preferida ? preferida.id : '', data: h, repete: 'uma', parcelas: 2, fim: '', certeza: 'certa', pago: true, pagador: AREA_CONJUNTA, ...extras };
     pintarFormulario(true);
   }
 
@@ -998,26 +1083,36 @@
     const eParcela = f.modo === 'editar' && f.parcelaGrupo;
     const podeMudarArea = f.modo === 'novo' || (f.modo === 'editar' && !f.parcelaGrupo && !f.recorrenteId && !f.metaId);
     const podeSerExcepcional = f.tipo === 'despesa' && !f.metaId && ((f.modo === 'novo' && f.repete === 'uma') || (f.modo === 'editar' && !f.parcelaGrupo && !f.recorrenteId));
+    // Gasto da conjunta pago do bolso: só lançamentos únicos (fixos e parcelas usam a conta conjunta).
+    const podeEscolherPagador = f.area === AREA_CONJUNTA && f.tipo === 'despesa' && temSegundaPessoa() && !f.metaId
+      && ((f.modo === 'novo' && f.repete === 'uma') || (f.modo === 'editar' && !f.parcelaGrupo && !f.recorrenteId));
+    if (!podeEscolherPagador) f.pagador = AREA_CONJUNTA;
+    const doBolso = f.pagador && f.pagador !== AREA_CONJUNTA;
+    const contasPagador = doBolso ? contasDaArea(f.pagador) : [];
+    if (doBolso && !contasPagador.some((c) => c.id === f.contaPessoal)) f.contaPessoal = (contasPagador.find((c) => c.tipo !== 'cartao') || contasPagador[0] || {}).id;
 
     abrirFolha(`<form data-form="lancamento" novalidate style="display:grid;gap:14px">
       ${topoFolha(titulos[f.modo])}
       ${f.modo === 'confirmar' ? `<p class="nota">Ajuste o valor se foi diferente. Previsto para ${dataBR(f.data)}.</p>` : ''}
       ${eParcela ? `<p class="nota">Parcela ${f.parcela} de ${f.parcelas}. A alteração vale só para esta parcela.</p>` : ''}
-      ${podeMudarArea ? `<div class="campo"><span class="rotulo">Vai para</span>${segmento('f-area', f.area, [[banco.perfil, 'Minhas'], [AREA_CONJUNTA, 'Conjunta']], 'largo')}</div>` : ''}
-      ${f.modo === 'novo' ? segmento('f-tipo', f.tipo, [['despesa', 'Saída'], ['receita', 'Entrada']], `largo ${f.tipo === 'despesa' ? 'saida' : 'entrada'}`) : ''}
+      ${podeMudarArea && !doBolso ? `<div class="campo"><span class="rotulo">Vai para</span>${segmento('f-area', f.area, [[banco.perfil, 'Minhas'], [AREA_CONJUNTA, 'Conjunta']], 'largo')}</div>` : ''}
+      ${f.modo === 'novo' ? segmento('f-tipo', f.tipo, [['despesa', 'Saída'], ['receita', 'Entrada'], ['transferencia', 'Transferência']], `largo ${f.tipo === 'despesa' ? 'saida' : 'entrada'}`) : ''}
       <label class="campo"><span>${f.repete === 'parcelado' ? 'Valor total' : 'Valor'}</span>
         <div class="valor-grande"><span>R$</span><input id="f-valor" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(f.valorTxt)}"></div></label>
       <p class="erro-campo" id="f-erro" hidden></p>
       <label class="campo"><span>Descrição</span><input id="f-descricao" type="text" list="f-sugestoes" placeholder="Opcional" autocomplete="off" maxlength="120" value="${esc(f.descricao)}"><datalist id="f-sugestoes">${descricoes.map((d) => `<option value="${esc(d)}"></option>`).join('')}</datalist></label>
+      ${podeEscolherPagador ? `<div class="campo"><span class="rotulo">Quem pagou</span>${segmento('f-pagador', f.pagador, [[AREA_CONJUNTA, 'Conta conjunta'], [Fin.AREA_PRIMEIRA, nomePerfil(Fin.AREA_PRIMEIRA)], [Fin.AREA_SEGUNDA, nomePerfil(Fin.AREA_SEGUNDA)]], 'largo')}${doBolso ? `<span class="dica-campo">Conta como gasto da conjunta e sai da conta de ${esc(nomePerfil(f.pagador))}. A parte do outro entra no acerto.</span>` : ''}</div>` : ''}
       <div class="grade-2">
         <label class="campo"><span>Categoria</span><select id="f-categoria">${cats.map((c) => `<option value="${esc(c.id)}" ${c.id === f.categoriaId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>
-        <label class="campo"><span>Conta</span><select id="f-conta">${contas.map((c) => `<option value="${esc(c.id)}" ${c.id === f.contaId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>
+        ${doBolso
+          ? `<label class="campo"><span>Saiu de</span><select id="f-conta-pessoal">${contasPagador.map((c) => `<option value="${esc(c.id)}" ${c.id === f.contaPessoal ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>`
+          : `<label class="campo"><span>Conta</span><select id="f-conta">${contas.map((c) => `<option value="${esc(c.id)}" ${c.id === f.contaId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>`}
       </div>
       ${f.modo === 'fixo'
         ? `<div class="grade-2"><label class="campo"><span>Dia do mês</span><input id="f-dia" type="number" inputmode="numeric" min="1" max="31" value="${Number(f.data.slice(8, 10))}"></label>
            <label class="campo"><span>Repetir até (opcional)</span><input id="f-fim" type="month" value="${esc(f.fim)}"></label></div>`
         : `<label class="campo"><span>${f.repete === 'mensal' ? 'Primeira ocorrência' : f.repete === 'parcelado' ? 'Data da compra' : 'Data'}</span><input id="f-data" type="date" value="${esc(f.data)}"></label>`}
-      ${f.modo === 'novo' ? `<div class="campo"><span class="rotulo">Repetição</span>${segmento('f-repete', f.repete, [['uma', 'Uma vez'], ...(f.tipo === 'despesa' ? [['parcelado', 'Parcelado']] : []), ['mensal', 'Todo mês']], 'largo')}</div>` : ''}
+      ${f.modo === 'novo' && !doBolso ? `<div class="campo"><span class="rotulo">Repetição</span>${segmento('f-repete', f.repete, [['uma', 'Uma vez'], ...(f.tipo === 'despesa' ? [['parcelado', 'Parcelado']] : []), ['mensal', 'Todo mês']], 'largo')}</div>` : ''}
       ${f.modo === 'novo' && f.repete === 'parcelado' ? `<label class="campo"><span>Número de parcelas</span><input id="f-parcelas" type="number" inputmode="numeric" min="2" max="120" value="${f.parcelas}"></label>` : ''}
       ${f.modo === 'novo' && f.repete === 'mensal' ? `<label class="campo"><span>Repetir até (opcional)</span><input id="f-fim" type="month" value="${esc(f.fim)}"></label>` : ''}
       ${f.tipo === 'receita' && f.modo !== 'confirmar' ? `<div class="campo"><span class="rotulo">Esta entrada é</span>${segmento('f-certeza', f.certeza, [['certa', 'Certa'], ['provavel', 'Provável']], 'largo')}<span class="dica-campo">As prováveis, como honorários de êxito, ficam fora da projeção conservadora.</span></div>` : ''}
@@ -1045,6 +1140,8 @@
     });
     const dia = v('f-dia');
     if (dia !== undefined) f.dia = dia;
+    const contaPessoal = v('f-conta-pessoal');
+    if (contaPessoal !== undefined) f.contaPessoal = contaPessoal;
     const pago = $('#f-pago', folha());
     if (pago) f.pago = pago.checked;
     const excepcional = $('#f-excepcional', folha());
@@ -1054,8 +1151,10 @@
   function atualizarDicasForm() {
     const f = form;
     lerFormulario();
-    const v = visao(f.area);
-    const conta = v.contas[f.contaId];
+    const doBolso = f.pagador && f.pagador !== AREA_CONJUNTA;
+    const v = visao(doBolso ? f.pagador : f.area);
+    const contaUsada = doBolso ? f.contaPessoal : f.contaId;
+    const conta = v.contas[contaUsada];
     const cartao = conta && conta.tipo === 'cartao';
     const linha = $('#f-pago-linha');
     const dica = $('#f-dica');
@@ -1075,8 +1174,8 @@
     }
     if (f.modo === 'novo' && f.repete === 'parcelado' && f.data && f.data < hoje() && !cartao) textos.push('As parcelas já vencidas entram como pagas.');
     const umaVez = (f.modo === 'novo' || f.modo === 'editar') && f.repete !== 'mensal';
-    const corte = conta && Fin.dataDoSaldo(v, { contaId: f.contaId });
-    if (umaVez && conta && f.data && Fin.jaNoSaldo(v, { contaId: f.contaId, data: f.data })) {
+    const corte = conta && Fin.dataDoSaldo(v, { contaId: contaUsada });
+    if (umaVez && conta && f.data && Fin.jaNoSaldo(v, { contaId: contaUsada, data: f.data })) {
       textos.push(`Esta data é anterior ao saldo informado em ${dataBR(corte)}: fica no histórico, mas não muda o saldo.`);
     } else if (f.modo === 'novo' && f.repete === 'mensal' && corte && f.data && f.data < corte) {
       textos.push(`O que tiver data anterior ao saldo informado em ${dataBR(corte)} fica no histórico, sem mudar o saldo.`);
@@ -1119,8 +1218,15 @@
     } else if (f.modo === 'confirmar') {
       gravar('lancamentos', realDaOcorrencia({ recorrenteId: f.recorrenteId, competencia: f.competencia, ...base, data: Fin.dataDoPagamento(v, base) }));
       mensagem = 'Confirmado';
+    } else if ((f.modo === 'novo' || f.modo === 'editar') && f.pagador && f.pagador !== AREA_CONJUNTA) {
+      salvarGastoDoBolso(f, base, valor);
+      mensagem = f.modo === 'novo' ? `Gasto da conjunta pago por ${nomePerfil(f.pagador)}` : 'Alteração salva';
     } else if (f.modo === 'editar') {
       const atual = banco.estado.lancamentos[f.id];
+      // Deixou de ser pago do bolso: o espelho na conta pessoal sai.
+      const espelhoAntigo = atual.semCaixa ? parDe(atual) : null;
+      if (espelhoAntigo) gravar('lancamentos', { ...espelhoAntigo, excluido: true });
+      if (espelhoAntigo) Object.assign(atual, { pagoPor: undefined, semCaixa: undefined, parId: undefined });
       const provavelVirouPago = base.tipo === 'receita' && f.pago;
       const pagouAgora = !cartao && f.pago && !atual.pago;
       gravar('lancamentos', {
@@ -1165,6 +1271,250 @@
     fecharFolha();
     concluir();
     avisar(mensagem);
+  }
+
+  /* Gasto da conjunta pago do bolso: o da conjunta não mexe no caixa dela; o espelho sai da conta de quem pagou. */
+  function salvarGastoDoBolso(f, base, valor) {
+    const h = hoje();
+    const atual = f.modo === 'editar' ? banco.estado.lancamentos[f.id] : null;
+    const idJ = atual ? atual.id : novoId();
+    const antigo = atual ? parDe(atual) : null;
+    const idM = antigo && Fin.areaDe(antigo) === f.pagador ? antigo.id : novoId();
+    if (antigo && antigo.id !== idM) gravar('lancamentos', { ...antigo, excluido: true });
+    const conta = contaGlobal(f.contaPessoal);
+    const cartao = conta && conta.tipo === 'cartao';
+    const futuro = base.data > h;
+    const pago = !cartao && !futuro && f.pago;
+    gravar('lancamentos', {
+      ...(atual || {}), id: idJ, ...base, area: AREA_CONJUNTA, pagoPor: f.pagador, semCaixa: true, parId: idM, pago: false,
+      ...(base.tipo === 'despesa' && f.excepcional ? { excepcional: true } : { excepcional: undefined }),
+    });
+    gravar('lancamentos', {
+      ...(antigo && antigo.id === idM ? antigo : {}), id: idM, area: f.pagador, tipo: 'despesa', descricao: base.descricao, valor,
+      categoriaId: CATEGORIA_CONJ, contaId: f.contaPessoal, data: pago ? Fin.dataDoPagamento(visao(f.pagador), { contaId: f.contaPessoal, data: base.data }) : base.data,
+      certeza: 'certa', pago, espelho: true, parId: idJ, ...(futuro ? { planejado: true } : {}),
+    });
+  }
+
+  /* ---------- transferências ---------- */
+  let tf = null;
+
+  /* Origem e destino possíveis: suas contas, as da conjunta e as da outra pessoa (sem cartões). */
+  function contasParaTransferir() {
+    const areas = [banco.perfil, AREA_CONJUNTA, ...(temSegundaPessoa() ? [outraPessoa()] : [])];
+    return areas.map((area) => ({ area, contas: contasDaArea(area, { cartao: false }) })).filter((g) => g.contas.length);
+  }
+
+  function opcoesContas(selecionada) {
+    return contasParaTransferir().map((g) => `<optgroup label="${esc(rotuloArea(g.area))}">${g.contas.map((c) => `<option value="${esc(c.id)}" ${c.id === selecionada ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('');
+  }
+
+  function novaTransferencia(extras = {}) {
+    const grupos = contasParaTransferir();
+    const minhas = (grupos.find((g) => g.area === banco.perfil) || { contas: [] }).contas;
+    const conj = (grupos.find((g) => g.area === AREA_CONJUNTA) || { contas: [] }).contas;
+    tf = { modo: 'novo', valorTxt: '', de: (minhas[0] || {}).id, para: (conj[0] || {}).id, data: hoje(), repete: 'uma', fim: '', descricao: '', pago: true, ...extras };
+    if (ui.area === 'conjunta' && minhas[0] && conj[0]) { tf.de = conj[0].id; tf.para = minhas[0].id; }
+    pintarTransferencia(true);
+  }
+
+  function abrirTransferencia(item) {
+    if (item.virtual) {
+      const rec = banco.estado.recorrentes[item.recorrenteId];
+      const par = parDe(rec, 'recorrentes');
+      const recA = rec.tipo === 'despesa' ? rec : par;
+      const recB = recA === rec ? par : rec;
+      tf = { modo: 'confirmar', recA: recA && recA.id, recB: recB && recB.id, competencia: item.competencia, valorTxt: valorParaCampo(item.valor), data: item.data, de: recA && recA.contaId, para: recB && recB.contaId, descricao: '', pago: true };
+    } else {
+      const par = parDe(item);
+      const a = item.tipo === 'despesa' ? item : par;
+      const b = a === item ? par : item;
+      tf = { modo: 'editar', idA: a && a.id, idB: b && b.id, valorTxt: valorParaCampo(item.valor), data: item.data, de: a && a.contaId, para: b && b.contaId, descricao: '', pago: !!item.pago, acerto: !!item.acerto };
+    }
+    pintarTransferencia(false);
+  }
+
+  function abrirFixoTransferencia(rec) {
+    const par = parDe(rec, 'recorrentes');
+    const recA = rec.tipo === 'despesa' ? rec : par;
+    const recB = recA === rec ? par : rec;
+    tf = { modo: 'fixo', recA: recA && recA.id, recB: recB && recB.id, valorTxt: valorParaCampo(rec.valor), data: rec.inicio, dia: Number(rec.inicio.slice(8, 10)), fim: rec.fim || '', de: recA && recA.contaId, para: recB && recB.contaId, descricao: '' };
+    pintarTransferencia(false);
+  }
+
+  function pintarTransferencia(focar) {
+    const t = tf;
+    const titulos = { novo: 'Nova transferência', editar: t.acerto ? 'Acerto' : 'Editar transferência', fixo: 'Transferência fixa', confirmar: 'Confirmar transferência' };
+    const fixa = (lado) => `<div class="campo"><span class="rotulo">${lado === 'de' ? 'De' : 'Para'}</span><p>${esc(rotuloConta(contaGlobal(t[lado])))}</p></div>`;
+    abrirFolha(`<form data-form="transferencia" novalidate style="display:grid;gap:14px">
+      ${topoFolha(titulos[t.modo])}
+      ${t.modo === 'novo' ? segmento('t-tipo', 'transferencia', [['despesa', 'Saída'], ['receita', 'Entrada'], ['transferencia', 'Transferência']], 'largo') : ''}
+      <label class="campo"><span>Valor</span>
+        <div class="valor-grande"><span>R$</span><input id="t-valor" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(t.valorTxt)}"></div></label>
+      <p class="erro-campo" id="t-erro" hidden></p>
+      <div class="grade-2">
+        ${t.modo === 'novo' ? `<label class="campo"><span>De</span><select id="t-de">${opcoesContas(t.de)}</select></label>` : fixa('de')}
+        ${t.modo === 'novo' ? `<label class="campo"><span>Para</span><select id="t-para">${opcoesContas(t.para)}</select></label>` : fixa('para')}
+      </div>
+      ${t.modo === 'confirmar' ? '' : `<label class="campo"><span>Descrição</span><input id="t-descricao" type="text" placeholder="Opcional" autocomplete="off" maxlength="120" value="${esc(t.descricao)}"></label>`}
+      ${t.modo === 'fixo'
+        ? `<div class="grade-2"><label class="campo"><span>Dia do mês</span><input id="t-dia" type="number" inputmode="numeric" min="1" max="31" value="${t.dia}"></label>
+           <label class="campo"><span>Repetir até (opcional)</span><input id="t-fim" type="month" value="${esc(t.fim)}"></label></div>`
+        : `<label class="campo"><span>${t.repete === 'mensal' ? 'Primeira transferência' : 'Data'}</span><input id="t-data" type="date" value="${esc(t.data)}"></label>`}
+      ${t.modo === 'novo' ? `<div class="campo"><span class="rotulo">Repetição</span>${segmento('t-repete', t.repete, [['uma', 'Uma vez'], ['mensal', 'Todo mês']], 'largo')}</div>` : ''}
+      ${t.modo === 'novo' && t.repete === 'mensal' ? `<label class="campo"><span>Repetir até (opcional)</span><input id="t-fim" type="month" value="${esc(t.fim)}"></label>` : ''}
+      ${t.modo === 'novo' || t.modo === 'editar' ? `<label class="marcar"><input id="t-pago" type="checkbox" ${t.pago ? 'checked' : ''}><span>Já foi feita</span></label>` : ''}
+      <p class="dica-campo" id="t-dica" hidden></p>
+      <div class="acoes" style="margin-top:4px">
+        <button type="submit" class="btn primario" style="flex:1 1 100%">${t.modo === 'confirmar' ? 'Confirmar' : 'Salvar'}</button>
+        ${t.modo === 'confirmar' ? '<button type="button" class="btn" data-acao="t-pular">Pular este mês</button><button type="button" class="btn" data-acao="t-editar-fixo">Editar transferência fixa</button>' : ''}
+        ${t.modo === 'editar' ? '<button type="button" class="btn perigo" data-acao="t-excluir">Excluir</button>' : ''}
+        ${t.modo === 'fixo' ? '<button type="button" class="btn perigo" data-acao="t-encerrar">Encerrar</button>' : ''}
+      </div>
+    </form>`, focar ? '#t-valor' : null);
+    dicaTransferencia();
+  }
+
+  function lerTransferencia() {
+    const t = tf;
+    const v = (id) => { const el = $('#' + id, folha()); return el ? el.value : undefined; };
+    [['t-valor', 'valorTxt'], ['t-de', 'de'], ['t-para', 'para'], ['t-data', 'data'], ['t-fim', 'fim'], ['t-descricao', 'descricao'], ['t-dia', 'dia']].forEach(([id, chave]) => {
+      const lido = v(id);
+      if (lido !== undefined) t[chave] = lido;
+    });
+    const pago = $('#t-pago', folha());
+    if (pago) t.pago = pago.checked;
+  }
+
+  function dicaTransferencia() {
+    const dica = $('#t-dica');
+    if (!dica || !tf) return;
+    lerTransferencia();
+    const a = contaGlobal(tf.de);
+    const b = contaGlobal(tf.para);
+    const textos = [];
+    if (a && b && a.id !== b.id) {
+      const areaA = Fin.areaDe(a);
+      const areaB = Fin.areaDe(b);
+      textos.push(areaA === areaB
+        ? 'Entre contas da mesma área: muda o saldo das duas, mas não conta como gasto nem como entrada.'
+        : `Sai como saída em ${rotuloArea(areaA)} e entra como entrada em ${rotuloArea(areaB)}.`);
+    }
+    if (tf.modo === 'novo' && tf.repete === 'mensal') textos.push('Aparece todo mês nas duas contas até ser confirmada.');
+    dica.textContent = textos.join(' ');
+    dica.hidden = !textos.length;
+  }
+
+  function salvarTransferencia() {
+    lerTransferencia();
+    const t = tf;
+    const erro = (msg) => { const e = $('#t-erro'); e.textContent = msg; e.hidden = false; };
+    const valor = lerReais(t.valorTxt);
+    if (valor <= 0) return erro('Digite um valor maior que zero.');
+    const h = hoje();
+    const descricao = (t.descricao || '').trim();
+
+    if (t.modo === 'novo') {
+      const a = contaGlobal(t.de);
+      const b = contaGlobal(t.para);
+      if (!a || !b) return erro('Escolha as duas contas.');
+      if (a.id === b.id) return erro('Escolha contas diferentes.');
+      const areaA = Fin.areaDe(a);
+      const areaB = Fin.areaDe(b);
+      const comum = { valor, categoriaId: CATEGORIA_TRANSF, certeza: 'certa', transferencia: true, ...(areaA !== areaB ? { entreAreas: true } : {}) };
+      const lados = [
+        { area: areaA, tipo: 'despesa', contaId: a.id, descricao: descricao || `Para ${rotuloConta(b)}` },
+        { area: areaB, tipo: 'receita', contaId: b.id, descricao: descricao || `De ${rotuloConta(a)}` },
+      ];
+      const data = t.data || h;
+      if (t.repete === 'mensal') {
+        const ids = [novoId(), novoId()];
+        lados.forEach((l, i) => gravar('recorrentes', { id: ids[i], parId: ids[1 - i], ...comum, ...l, inicio: data, fim: t.fim || null, pulados: [] }));
+        if (data <= h) {
+          // Meses que já passaram entram como feitos; o mais recente segue o "já foi feita".
+          const vencidas = Fin.ocorrencias(visao(areaA), mesDe(h)).filter((o) => o.recorrenteId === ids[0] && o.data <= h);
+          const ultima = vencidas.pop();
+          vencidas.forEach((o) => confirmarOcorrencia(o));
+          if (ultima && t.pago) confirmarOcorrencia(ultima);
+        }
+      } else {
+        const ids = [novoId(), novoId()];
+        const pago = data <= h && t.pago;
+        lados.forEach((l, i) => gravar('lancamentos', {
+          id: ids[i], parId: ids[1 - i], ...comum, ...l, pago,
+          data: pago ? Fin.dataDoPagamento(visao(l.area), { contaId: l.contaId, data }) : data,
+        }));
+      }
+      fecharFolha();
+      concluir();
+      avisar(t.repete === 'mensal' ? 'Transferência fixa criada' : 'Transferência salva');
+      return;
+    }
+
+    if (t.modo === 'editar') {
+      [t.idA, t.idB].forEach((id) => {
+        const atual = banco.estado.lancamentos[id];
+        if (!atual) return;
+        const pago = t.pago && (t.data || h) <= h;
+        gravar('lancamentos', { ...atual, valor, data: t.data || atual.data, pago, ...(descricao ? { descricao } : {}) });
+      });
+    } else if (t.modo === 'fixo') {
+      const dia = String(Math.min(31, Math.max(1, Number(t.dia) || 1))).padStart(2, '0');
+      [t.recA, t.recB].forEach((id) => {
+        const rec = banco.estado.recorrentes[id];
+        if (rec) gravar('recorrentes', { ...rec, valor, inicio: `${rec.inicio.slice(0, 7)}-${dia}`, fim: t.fim || null, ...(descricao ? { descricao } : {}) });
+      });
+    } else if (t.modo === 'confirmar') {
+      const recA = banco.estado.recorrentes[t.recA];
+      const o = recA && Fin.ocorrencias(visao(Fin.areaDe(recA)), t.competencia).find((x) => x.recorrenteId === recA.id && x.competencia === t.competencia);
+      if (o) confirmarOcorrencia(o, { valor, data: Fin.dataDoPagamento(visao(Fin.areaDe(recA)), { ...o, data: t.data || o.data }) });
+    }
+    fecharFolha();
+    concluir();
+    avisar(t.modo === 'confirmar' ? 'Confirmada' : 'Alteração salva');
+  }
+
+  /* ---------- acerto ---------- */
+  function formAcerto() {
+    const s = situacaoAcerto();
+    if (!s) return;
+    const de = contasDaArea(s.devedor, { cartao: false });
+    const para = contasDaArea(s.credor, { cartao: false });
+    abrirFolha(`<form data-form="acerto" novalidate style="display:grid;gap:14px">
+      ${topoFolha('Registrar acerto')}
+      <p class="nota"><b>${esc(nomePerfil(s.devedor))}</b> paga a <b>${esc(nomePerfil(s.credor))}</b>. Fica registrado como transferência entre as contas dos dois e zera o acerto.</p>
+      <label class="campo"><span>Valor</span><div class="valor-grande"><span>R$</span><input id="ac-valor" type="text" inputmode="decimal" autocomplete="off" value="${esc(valorParaCampo(s.valor))}"></div></label>
+      <p class="erro-campo" id="ac-erro" hidden></p>
+      <div class="grade-2">
+        <label class="campo"><span>Sai de (${esc(nomePerfil(s.devedor))})</span><select id="ac-de">${de.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}</select></label>
+        <label class="campo"><span>Entra em (${esc(nomePerfil(s.credor))})</span><select id="ac-para">${para.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}</select></label>
+      </div>
+      <label class="campo"><span>Data</span><input id="ac-data" type="date" value="${hoje()}"></label>
+      <button type="submit" class="btn primario">Registrar</button>
+    </form>`, '#ac-valor');
+  }
+
+  function salvarAcerto() {
+    const s = situacaoAcerto();
+    if (!s) { fecharFolha(); return; }
+    const valor = lerReais($('#ac-valor').value);
+    const erro = $('#ac-erro');
+    const a = contaGlobal($('#ac-de').value);
+    const b = contaGlobal($('#ac-para').value);
+    if (valor <= 0) { erro.textContent = 'Digite um valor maior que zero.'; erro.hidden = false; return; }
+    if (!a || !b) { erro.textContent = 'As duas pessoas precisam ter uma conta que não seja cartão.'; erro.hidden = false; return; }
+    const data = $('#ac-data').value || hoje();
+    const pago = data <= hoje();
+    const ids = [novoId(), novoId()];
+    const comum = { valor, categoriaId: CATEGORIA_TRANSF, certeza: 'certa', transferencia: true, entreAreas: true, acerto: true, pago };
+    gravar('lancamentos', { id: ids[0], parId: ids[1], ...comum, area: s.devedor, tipo: 'despesa', contaId: a.id, data, descricao: `Acerto para ${nomePerfil(s.credor)}` });
+    gravar('lancamentos', { id: ids[1], parId: ids[0], ...comum, area: s.credor, tipo: 'receita', contaId: b.id, data, descricao: `Acerto de ${nomePerfil(s.devedor)}` });
+    fecharFolha();
+    concluir();
+    avisar('Acerto registrado', () => {
+      ids.forEach((id) => gravar('lancamentos', { ...banco.estado.lancamentos[id], excluido: true }));
+      concluir();
+    });
   }
 
   /* ---------- outros formulários ---------- */
@@ -1322,8 +1672,10 @@
   }
 
   function excluirVarios(colecao, ids, texto) {
-    const anteriores = ids.map((id) => ({ ...estado[colecao][id] }));
-    ids.forEach((id) => gravar(colecao, { ...estado[colecao][id], excluido: true }));
+    // banco.estado: os pares (transferência, gasto pago do bolso) ficam em áreas diferentes.
+    const existentes = ids.filter((id) => banco.estado[colecao][id]);
+    const anteriores = existentes.map((id) => ({ ...banco.estado[colecao][id] }));
+    existentes.forEach((id) => gravar(colecao, { ...banco.estado[colecao][id], excluido: true }));
     fecharFolha();
     concluir();
     avisar(texto, () => {
@@ -1695,25 +2047,33 @@
       const item = acharItem(id);
       if (!item) return;
       if (item.virtual) {
-        gravar('lancamentos', realDaOcorrencia({ ...item, data: Fin.dataDoPagamento(estado, item) }));
+        confirmarOcorrencia(item, { data: Fin.dataDoPagamento(estado, item) });
         avisar(item.tipo === 'receita' ? 'Recebimento confirmado' : 'Pagamento confirmado', () => {
-          const real = estado.lancamentos[`rc-${item.recorrenteId}-${item.competencia}`];
-          gravar('lancamentos', { ...real, excluido: true });
+          const real = banco.estado.lancamentos[`rc-${item.recorrenteId}-${item.competencia}`];
+          [real, parDe(real)].filter(Boolean).forEach((r) => gravar('lancamentos', { ...r, excluido: true }));
           concluir();
         });
       } else {
         const pago = !item.pago;
-        gravar('lancamentos', { ...item, pago, data: pago ? Fin.dataDoPagamento(estado, item) : item.data, certeza: pago && item.tipo === 'receita' ? 'certa' : item.certeza });
+        // Transferência: as duas pontas ficam feitas (ou não) juntas.
+        const lados = item.transferencia ? [item, parDe(item)].filter(Boolean) : [item];
+        lados.forEach((l) => {
+          const v = visao(Fin.areaDe(l));
+          gravar('lancamentos', { ...l, pago, data: pago ? Fin.dataDoPagamento(v, l) : l.data, certeza: pago && l.tipo === 'receita' ? 'certa' : l.certeza });
+        });
       }
       concluir();
     },
     'abrir-item': (b) => {
-      const item = acharItem(b.dataset.id);
+      const item = acharItem(b.dataset.id) || banco.estado.lancamentos[b.dataset.id];
       if (!item) return;
+      if (item.transferencia) { abrirTransferencia(item); return; }
+      if (item.espelho) { abrirEspelho(item); return; }
       if (item.virtual) {
         form = { modo: 'confirmar', area: areaAtiva(), tipo: item.tipo, valorTxt: valorParaCampo(item.valor), descricao: item.descricao, categoriaId: item.categoriaId, contaId: item.contaId, data: item.data, repete: 'uma', fim: '', certeza: 'certa', pago: true, recorrenteId: item.recorrenteId, competencia: item.competencia };
       } else {
-        form = { modo: 'editar', area: areaAtiva(), id: item.id, tipo: item.tipo, valorTxt: valorParaCampo(item.valor), descricao: item.descricao, categoriaId: item.categoriaId, contaId: item.contaId, data: item.data, repete: 'uma', fim: '', certeza: item.certeza || 'certa', pago: !!item.pago, parcelaGrupo: item.parcelaGrupo, parcela: item.parcela, parcelas: item.parcelas, recorrenteId: item.recorrenteId, metaId: item.metaId, excepcional: !!item.excepcional };
+        const espelho = item.semCaixa ? parDe(item) : null;
+        form = { modo: 'editar', area: areaAtiva(), id: item.id, tipo: item.tipo, valorTxt: valorParaCampo(item.valor), descricao: item.descricao, categoriaId: item.categoriaId, contaId: item.contaId, data: item.data, repete: 'uma', fim: '', certeza: item.certeza || 'certa', pago: espelho ? !!espelho.pago : !!item.pago, parcelaGrupo: item.parcelaGrupo, parcela: item.parcela, parcelas: item.parcelas, recorrenteId: item.recorrenteId, metaId: item.metaId, excepcional: !!item.excepcional, pagador: item.pagoPor || AREA_CONJUNTA, contaPessoal: espelho ? espelho.contaId : undefined };
       }
       pintarFormulario(false);
     },
@@ -1726,7 +2086,39 @@
       form.categoriaId = '';
       pintarFormulario(false);
     },
-    'f-tipo': (b) => { lerFormulario(); form.tipo = b.dataset.valor; if (form.tipo === 'receita' && form.repete === 'parcelado') form.repete = 'uma'; pintarFormulario(false); },
+    'f-tipo': (b) => {
+      lerFormulario();
+      if (b.dataset.valor === 'transferencia') { novaTransferencia({ valorTxt: form.valorTxt, data: form.data }); return; }
+      form.tipo = b.dataset.valor;
+      if (form.tipo === 'receita' && form.repete === 'parcelado') form.repete = 'uma';
+      pintarFormulario(false);
+    },
+    'f-pagador': (b) => { lerFormulario(); form.pagador = b.dataset.valor; if (form.pagador !== AREA_CONJUNTA) form.repete = 'uma'; pintarFormulario(false); },
+    't-tipo': (b) => {
+      lerTransferencia();
+      if (b.dataset.valor !== 'transferencia') formularioNovo({ tipo: b.dataset.valor, valorTxt: tf.valorTxt, data: tf.data });
+    },
+    't-repete': (b) => { lerTransferencia(); tf.repete = b.dataset.valor; pintarTransferencia(false); },
+    't-excluir': () => pedirConfirmacao('Excluir a transferência?', 'Sai das duas contas.', 'Excluir', () => excluirVarios('lancamentos', [tf.idA, tf.idB].filter(Boolean), 'Transferência excluída')),
+    't-encerrar': () => pedirConfirmacao('Encerrar a transferência fixa?', 'Deixa de aparecer nos próximos meses nas duas contas. O que já foi feito continua no histórico.', 'Encerrar', () => excluirVarios('recorrentes', [tf.recA, tf.recB].filter(Boolean), 'Transferência fixa encerrada')),
+    't-pular': () => {
+      [tf.recA, tf.recB].forEach((id) => {
+        const rec = banco.estado.recorrentes[id];
+        if (rec) gravar('recorrentes', { ...rec, pulados: [...(rec.pulados || []), tf.competencia] });
+      });
+      fecharFolha();
+      concluir();
+      avisar('Este mês foi pulado');
+    },
+    't-editar-fixo': () => { const rec = banco.estado.recorrentes[tf.recA]; if (rec) abrirFixoTransferencia(rec); },
+    'registrar-acerto': formAcerto,
+    'abrir-na-conjunta': (b) => {
+      const id = b.dataset.id;
+      fecharFolha();
+      ui.area = 'conjunta';
+      desenhar(true);
+      acoes['abrir-item']({ dataset: { id } });
+    },
     'f-repete': (b) => { lerFormulario(); form.repete = b.dataset.valor; pintarFormulario(false); },
     'f-certeza': (b) => {
       lerFormulario();
@@ -1736,7 +2128,7 @@
     },
     'pular-mes': () => {
       const rec = estado.recorrentes[form.recorrenteId];
-      gravar('recorrentes', { ...rec, pulados: [...(rec.pulados || []), form.competencia] });
+      [rec, parDe(rec, 'recorrentes')].filter(Boolean).forEach((r) => gravar('recorrentes', { ...r, pulados: [...(r.pulados || []), form.competencia] }));
       fecharFolha();
       concluir();
       avisar('Este mês foi pulado');
@@ -1746,7 +2138,7 @@
     'excluir-fixo': () => {
       const rec = estado.recorrentes[form.id];
       pedirConfirmacao('Encerrar este fixo?', `"${rec.descricao}" deixa de aparecer nos próximos meses. O que já foi confirmado continua no histórico.`, 'Encerrar', () => {
-        excluirVarios('recorrentes', [rec.id], 'Fixo encerrado');
+        excluirVarios('recorrentes', [rec.id, rec.parId].filter(Boolean), 'Fixo encerrado');
       });
     },
     'excluir-lancamento': () => {
@@ -1755,7 +2147,8 @@
         const rec = estado.recorrentes[atual.recorrenteId];
         if (rec) gravar('recorrentes', { ...rec, pulados: [...(rec.pulados || []), atual.competencia] });
       }
-      excluirVarios('lancamentos', [form.id], 'Lançamento excluído');
+      // Gasto pago do bolso: o espelho na conta pessoal sai junto.
+      excluirVarios('lancamentos', [form.id, atual.parId].filter(Boolean), 'Lançamento excluído');
     },
     'excluir-parcelas': () => {
       const grupo = form.parcelaGrupo;
@@ -1849,15 +2242,31 @@
     restaurar: () => $('#arquivo-backup').click(),
   };
 
+  function abrirEspelho(item) {
+    const conta = estado.contas[item.contaId];
+    abrirFolha(`${topoFolha(item.descricao)}
+      <p class="nota">Gasto da Conjunta pago por você, de <b>${esc(conta ? conta.nome : 'uma conta sua')}</b>: ${reais(item.valor)} em ${dataBR(item.data)}. Para mudar valor, data ou quem pagou, abra o gasto na Conjunta.</p>
+      <div class="acoes"><button type="button" class="btn primario" data-acao="abrir-na-conjunta" data-id="${esc(item.parId)}" style="flex:1">Abrir na Conjunta</button></div>`);
+  }
+
   function abrirFixo(id) {
     const r = estado.recorrentes[id];
     if (!r) return;
+    if (r.transferencia) { abrirFixoTransferencia(r); return; }
     form = { modo: 'fixo', area: areaAtiva(), id: r.id, tipo: r.tipo, valorTxt: valorParaCampo(r.valor), descricao: r.descricao, categoriaId: r.categoriaId, contaId: r.contaId, data: r.inicio, repete: 'mensal', fim: r.fim || '', certeza: r.certeza || 'certa', pago: false };
     pintarFormulario(false);
   }
 
   const formularios = {
     lancamento: salvarFormulario,
+    transferencia: salvarTransferencia,
+    acerto: salvarAcerto,
+    divisao: () => {
+      const p1 = Math.min(100, Math.max(0, Math.round(Number($('#d-p1').value) || 0)));
+      gravar('config', { ...estado.config.geral, divisaoP1: p1 });
+      concluir();
+      avisar(`Divisão salva: ${p1}% e ${100 - p1}%`);
+    },
     ajuste: (f) => {
       const conta = estado.contas[f.dataset.id];
       const texto = $('#a-valor').value.trim();
@@ -1962,6 +2371,8 @@
   });
 
   const PODE_NEGATIVO = new Set(['c-saldo', 'saldo-inicial', 'a-valor']);
+  // Ao trocar a conta de origem ou de destino, a dica da transferência acompanha.
+  document.addEventListener('change', (e) => { if (tf && (e.target.id === 't-de' || e.target.id === 't-para')) dicaTransferencia(); });
   function pontuarValor(el, e) {
     // Colado, preenchido automaticamente ou ditado: chega de uma vez, então lê o valor inteiro.
     if (e.inputType === 'insertFromPaste' || e.inputType === 'insertReplacementText' || (e.data && e.data.length > 1)) {
@@ -1990,6 +2401,8 @@
       pintarSimulacao(false);
     } else if (id && id.startsWith('f-') && form) {
       atualizarDicasForm();
+    } else if (id && id.startsWith('t-') && tf) {
+      dicaTransferencia();
     } else if (id === 'a-valor') {
       dicaAjuste();
     } else if (id === 'c-saldo') {

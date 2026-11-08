@@ -219,6 +219,14 @@
 
   const sinal = (item) => (item.tipo === 'receita' ? item.valor : -item.valor);
 
+  /* Gasto da conjunta pago por um dos dois: é gasto da conjunta, mas o dinheiro saiu da conta
+     pessoal de quem pagou (num lançamento espelho), então não mexe no caixa da conjunta. */
+  const movimentaCaixa = (l) => !l.semCaixa;
+
+  /* Transferência entre contas da mesma área não é gasto nem entrada: o dinheiro continua seu.
+     Entre áreas (sua → conjunta, sua → da outra pessoa) conta como saída de um lado e entrada do outro. */
+  const soMudouDeConta = (l) => !!l.transferencia && !l.entreAreas;
+
   /* De onde sai a fatura: a conta escolhida no cartão; sem escolha, a principal do mesmo grupo. */
   function contaPagadora(estado, cartao) {
     const escolhida = cartao.contaPagamento && contaDe(estado, cartao.contaPagamento);
@@ -275,6 +283,7 @@
           const [a, m] = partes(ym);
           saida.push({
             id: `v:${rec.id}:${ym}`, virtual: true, recorrenteId: rec.id, competencia: ym, area: rec.area,
+            transferencia: rec.transferencia, entreAreas: rec.entreAreas, acerto: rec.acerto, parRecorrente: rec.parId,
             tipo: rec.tipo, descricao: rec.descricao, valor: rec.valor,
             categoriaId: rec.categoriaId, contaId: rec.contaId,
             data: montaData(a, m, dia), certeza: rec.certeza || 'certa', pago: false,
@@ -290,7 +299,12 @@
     return {
       id: `rc-${o.recorrenteId}-${o.competencia}`, tipo: o.tipo, descricao: o.descricao, valor: o.valor,
       categoriaId: o.categoriaId, contaId: o.contaId, data: o.data, certeza: 'certa', pago: true,
-      recorrenteId: o.recorrenteId, competencia: o.competencia, area: o.area, ...extras,
+      recorrenteId: o.recorrenteId, competencia: o.competencia, area: o.area,
+      ...(o.transferencia ? { transferencia: true } : {}),
+      ...(o.entreAreas ? { entreAreas: true } : {}),
+      ...(o.acerto ? { acerto: true } : {}),
+      ...(o.parRecorrente ? { parId: `rc-${o.parRecorrente}-${o.competencia}` } : {}),
+      ...extras,
     };
   }
 
@@ -300,7 +314,7 @@
 
   function fixosDoCartaoVencidos(visao, hoje, area) {
     return ocorrencias(visao, mesDe(hoje))
-      .filter((o) => o.data <= hoje && ehCartao(visao, o))
+      .filter((o) => o.data <= hoje && ehCartao(visao, o) && !o.transferencia)
       .map((o) => realDaOcorrencia(o, { area, atualizadoEm: EDICAO_AUTOMATICA }));
   }
 
@@ -322,7 +336,7 @@
       if (c.tipo !== 'cartao' && (!grupo || grupo === 'Tudo' || c.grupo === grupo)) total += c.saldoInicial || 0;
     });
     lancamentosReais(estado, grupo).forEach((l) => {
-      if (liquidado(estado, l, hoje) && !jaNoSaldo(estado, l)) total += sinal(l);
+      if (movimentaCaixa(l) && liquidado(estado, l, hoje) && !jaNoSaldo(estado, l)) total += sinal(l);
     });
     return total;
   }
@@ -334,7 +348,7 @@
     const datas = [...new Set(contas.filter((c) => c.saldoInicial || c.saldoData).map((c) => c.saldoData || null))];
     const r = { informado, desde: datas.length === 1 ? datas[0] : null, entrou: 0, saiu: 0, guardado: 0, antes: [] };
     lancamentosReais(estado, grupo).forEach((l) => {
-      if (!liquidado(estado, l, hoje)) return;
+      if (!movimentaCaixa(l) || !liquidado(estado, l, hoje)) return;
       if (jaNoSaldo(estado, l)) {
         r.antes.push(l);
         return;
@@ -352,7 +366,7 @@
     let total = conta.saldoInicial || 0;
     vivos(estado, 'lancamentos').forEach((l) => {
       const caixa = contaDoCaixa(estado, l);
-      if (caixa && caixa.id === conta.id && liquidado(estado, l, hoje) && !jaNoSaldo(estado, l)) total += sinal(l);
+      if (movimentaCaixa(l) && caixa && caixa.id === conta.id && liquidado(estado, l, hoje) && !jaNoSaldo(estado, l)) total += sinal(l);
     });
     return total;
   }
@@ -368,7 +382,7 @@
     return vivos(estado, 'lancamentos')
       .filter((l) => {
         const caixa = contaDoCaixa(estado, l);
-        return caixa && caixa.id === conta.id && !ehCartao(estado, l) && l.pago && l.data > hoje;
+        return movimentaCaixa(l) && caixa && caixa.id === conta.id && !ehCartao(estado, l) && l.pago && l.data > hoje;
       })
       .sort((a, b) => (a.data < b.data ? -1 : 1));
   }
@@ -378,7 +392,7 @@
     let menor = hojeLocal(new Date(conta.atualizadoEm));
     vivos(estado, 'lancamentos').forEach((l) => {
       const caixa = contaDoCaixa(estado, l);
-      if (caixa && caixa.id === conta.id && liquidado(estado, l, hoje)) {
+      if (movimentaCaixa(l) && caixa && caixa.id === conta.id && liquidado(estado, l, hoje)) {
         const quando = dataCaixa(estado, l);
         if (quando < menor) menor = quando;
       }
@@ -387,7 +401,7 @@
   }
 
   /* ---------- gastos variáveis: o que não é fixo nem parcela ---------- */
-  const ehVariavel = (l) => l.tipo === 'despesa' && !l.recorrenteId && !l.parcelaGrupo && !l.planejado && !l.excepcional && !l.metaId;
+  const ehVariavel = (l) => l.tipo === 'despesa' && !l.recorrenteId && !l.parcelaGrupo && !l.planejado && !l.excepcional && !l.metaId && !l.transferencia;
 
   function gastoVariavel(estado, ym, grupo) {
     return lancamentosReais(estado, grupo)
@@ -473,7 +487,7 @@
     };
 
     [...lancamentosReais(estado, grupo), ...ocorrencias(estado, ultimoMes, grupo)].forEach((item) => {
-      if (liquidado(estado, item, hoje)) return;
+      if (!movimentaCaixa(item) || liquidado(estado, item, hoje)) return;
       if (item.tipo === 'receita' && item.certeza === 'provavel' && !provaveis) return;
       soma(dataCaixa(estado, item), sinal(item));
     });
@@ -525,7 +539,7 @@
   /* Reconstrói o saldo no fim dos meses passados a partir do que já foi liquidado. */
   function historicoSaldo(estado, hoje, meses, grupo = 'Tudo') {
     const atual = saldoHoje(estado, hoje, grupo);
-    const itens = lancamentosReais(estado, grupo).filter((l) => liquidado(estado, l, hoje));
+    const itens = lancamentosReais(estado, grupo).filter((l) => movimentaCaixa(l) && liquidado(estado, l, hoje));
     const saida = [];
     for (let i = meses; i >= 1; i--) {
       const ym = somaMeses(mesDe(hoje), -i);
@@ -541,13 +555,16 @@
   /* Com "hoje", separa também o que já aconteceu do que ainda está previsto. */
   function resumoMes(estado, ym, grupo, hoje) {
     const itens = itensDoMes(estado, ym, grupo);
-    const r = { entradasCertas: 0, entradasProvaveis: 0, saidas: 0, guardado: 0, entrou: 0, saiu: 0, porCategoria: {}, qtd: itens.length };
+    const r = { entradasCertas: 0, entradasProvaveis: 0, saidas: 0, guardado: 0, transferido: 0, entrou: 0, saiu: 0, porCategoria: {}, qtd: itens.length };
     itens.forEach((i) => {
-      if (hoje && !i.metaId && liquidado(estado, i, hoje)) {
+      if (hoje && !i.metaId && !soMudouDeConta(i) && liquidado(estado, i, hoje)) {
         if (i.tipo === 'receita') r.entrou += i.valor;
         else r.saiu += i.valor;
       }
-      if (i.metaId) {
+      if (soMudouDeConta(i)) {
+        // Dinheiro que só mudou de conta: mexe no saldo, mas não é gasto nem entrada.
+        r.transferido += i.tipo === 'despesa' ? i.valor : 0;
+      } else if (i.metaId) {
         // Dinheiro guardado sai do saldo, mas não é gasto.
         r.guardado += i.valor;
       } else if (i.tipo === 'receita') {
@@ -567,7 +584,7 @@
   function proximos(estado, hoje, dias, grupo, { entradas = false } = {}) {
     const limite = somaDias(hoje, dias);
     const itens = [...lancamentosReais(estado, grupo), ...ocorrencias(estado, mesDe(somaMeses(limite, 2)), grupo)]
-      .filter((i) => !liquidado(estado, i, hoje) && (i.tipo === 'despesa' || (entradas && i.certeza !== 'provavel' && !ehCartao(estado, i))));
+      .filter((i) => movimentaCaixa(i) && !liquidado(estado, i, hoje) && (i.tipo === 'despesa' || (entradas && i.certeza !== 'provavel' && !ehCartao(estado, i))));
     const faturas = new Map();
     const avulsos = [];
     itens.forEach((i) => {
@@ -645,6 +662,23 @@
     return { falta, meses, data: somaMeses(mes, feitoEsteMes ? meses : meses - 1), pronta: false, feitoEsteMes };
   }
 
+  /* ---------- acerto do casal ---------- */
+  /* Positivo: a segunda pessoa deve à primeira; negativo: o contrário. Conta os gastos da conjunta
+     pagos do bolso de um (pela divisão combinada) e desconta os acertos já feitos. */
+  function acertoConjunta(estado, hoje, parteP1 = 50) {
+    const p1 = Math.min(100, Math.max(0, parteP1)) / 100;
+    let saldo = 0;
+    vivos(estado, 'lancamentos').forEach((l) => {
+      if (l.data > hoje) return;
+      if (areaDe(l) === AREA_CONJUNTA && l.tipo === 'despesa' && l.pagoPor) {
+        saldo += l.pagoPor === AREA_PRIMEIRA ? l.valor * (1 - p1) : -l.valor * p1;
+      } else if (l.acerto && l.transferencia && l.tipo === 'despesa') {
+        saldo += areaDe(l) === AREA_PRIMEIRA ? l.valor : -l.valor;
+      }
+    });
+    return Math.round(saldo);
+  }
+
   /* ---------- alertas ---------- */
   function alertas(estado, hoje, grupo) {
     const lista = [];
@@ -685,7 +719,7 @@
     historicoSaldo, resumoMes, proximos, criarParcelas, parcelamentos, previsaoMeta, alertas,
     ehCartao, sinal, contaPagadora, dataDoSaldo, jaNoSaldo, dataDoPagamento, dataDoSaldoAntigo,
     realDaOcorrencia, fixosDoCartaoVencidos, guardadoMeta, aporteDoMes, composicaoSaldo, formatarDigitando,
-    ajusteAoBanco, pagosAdiantados,
+    ajusteAoBanco, pagosAdiantados, acertoConjunta, movimentaCaixa, soMudouDeConta,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Fin = api;

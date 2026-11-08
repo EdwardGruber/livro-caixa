@@ -497,3 +497,72 @@ test('ajustar ao banco considera a fatura paga pela conta e aponta o que foi pag
   assert.equal(Fin.saldoConta(e, conta, HOJE), 12345);
   assert.deepEqual(Fin.pagosAdiantados(e, e.contas.esc, HOJE), []);
 });
+
+test('transferência para outra área é saída de um lado e entrada do outro', () => {
+  const e = base();
+  Object.values(Fin.padroesDaArea('conjunta').contas).forEach((c) => { e.contas[c.id] = { ...c, saldoInicial: 0 }; });
+  lanc(e, { tipo: 'despesa', valor: 50000, data: '2026-11-05', transferencia: true, entreAreas: true, categoriaId: 'transferencia' });
+  lanc(e, { tipo: 'receita', valor: 50000, data: '2026-11-05', transferencia: true, entreAreas: true, categoriaId: 'transferencia', area: 'conjunta', contaId: 'conjunta-ct-banco' });
+  const minhas = Fin.visaoDaArea(e, 'p1');
+  const conjunta = Fin.visaoDaArea(e, 'conjunta');
+  assert.equal(Fin.saldoHoje(minhas, HOJE), 150000 - 50000);
+  assert.equal(Fin.saldoHoje(conjunta, HOJE), 50000);
+  const r = Fin.resumoMes(minhas, '2026-11', 'Tudo', HOJE);
+  assert.equal(r.saidas, 50000);
+  assert.equal(r.saiu, 50000);
+  assert.equal(r.porCategoria.transferencia, 50000);
+  assert.equal(Fin.resumoMes(conjunta, '2026-11').entradasCertas, 50000);
+  // Não vira "gasto variável" na estimativa.
+  assert.equal(Fin.mediaVariavel(minhas, '2026-12-15').valor, 0);
+});
+
+test('transferência entre contas da mesma área não é gasto nem entrada', () => {
+  const e = base();
+  lanc(e, { tipo: 'despesa', valor: 30000, data: '2026-11-05', transferencia: true, categoriaId: 'transferencia' });
+  lanc(e, { tipo: 'receita', valor: 30000, data: '2026-11-05', transferencia: true, categoriaId: 'transferencia', contaId: 'ct-dinheiro' });
+  const r = Fin.resumoMes(e, '2026-11', 'Tudo', HOJE);
+  assert.equal(r.saidas, 0);
+  assert.equal(r.entradasCertas, 0);
+  assert.equal(r.transferido, 30000);
+  assert.equal(Fin.saldoHoje(e, HOJE), 150000);
+});
+
+test('transferência mensal: as duas pontas aparecem e a confirmada aponta para o par', () => {
+  const e = base();
+  e.recorrentes.ra = { id: 'ra', parId: 'rb', tipo: 'despesa', transferencia: true, valor: 100000, inicio: '2026-11-10', contaId: 'ct-banco', categoriaId: 'transferencia', atualizadoEm: 2, area: 'p1' };
+  e.recorrentes.rb = { id: 'rb', parId: 'ra', tipo: 'receita', transferencia: true, valor: 100000, inicio: '2026-11-10', contaId: 'conjunta-ct-banco', categoriaId: 'transferencia', atualizadoEm: 2, area: 'conjunta' };
+  const o = Fin.ocorrencias(Fin.visaoDaArea(e, 'p1'), '2026-11')[0];
+  assert.equal(o.transferencia, true);
+  const real = Fin.realDaOcorrencia(o);
+  assert.equal(real.parId, 'rc-rb-2026-11');
+  assert.equal(real.transferencia, true);
+  // A saída prevista pesa na projeção da conta de origem.
+  const p = Fin.projetar(Fin.visaoDaArea(e, 'p1'), HOJE, 1, { variavel: 0 });
+  assert.equal(p.finaisDeMes[0].saldo, 150000 - 100000);
+});
+
+test('gasto da conjunta pago do bolso: conta como gasto da conjunta sem mexer no caixa dela', () => {
+  const e = base();
+  Object.values(Fin.padroesDaArea('conjunta').contas).forEach((c) => { e.contas[c.id] = { ...c, saldoInicial: 30000 }; });
+  lanc(e, { tipo: 'despesa', valor: 20000, data: '2026-11-04', area: 'conjunta', contaId: 'conjunta-ct-banco', pagoPor: 'p1', semCaixa: true, categoriaId: 'conjunta-cat-mercado', pago: false });
+  lanc(e, { tipo: 'despesa', valor: 20000, data: '2026-11-04', area: 'p1', contaId: 'ct-banco', espelho: true, categoriaId: 'conjunta' });
+  const conjunta = Fin.visaoDaArea(e, 'conjunta');
+  assert.equal(Fin.saldoHoje(conjunta, HOJE), 30000);
+  assert.equal(Fin.resumoMes(conjunta, '2026-11').saidas, 20000);
+  assert.equal(Fin.proximos(conjunta, HOJE, 30).length, 0);
+  assert.equal(Fin.projetar(conjunta, HOJE, 1, { variavel: 0 }).saldoFinal, 30000);
+  assert.equal(Fin.saldoHoje(Fin.visaoDaArea(e, 'p1'), HOJE), 150000 - 20000);
+});
+
+test('acerto: divide os gastos pagos do bolso e desconta os acertos feitos', () => {
+  const e = base();
+  lanc(e, { tipo: 'despesa', valor: 20000, data: '2026-11-04', area: 'conjunta', pagoPor: 'p1', semCaixa: true });
+  lanc(e, { tipo: 'despesa', valor: 6000, data: '2026-11-05', area: 'conjunta', pagoPor: 'p2', semCaixa: true });
+  lanc(e, { tipo: 'despesa', valor: 99999, data: '2026-11-05', area: 'conjunta' }); // pago pela conta conjunta
+  lanc(e, { tipo: 'despesa', valor: 50000, data: '2026-12-01', area: 'conjunta', pagoPor: 'p1', semCaixa: true }); // ainda não chegou
+  assert.equal(Fin.acertoConjunta(e, HOJE), 10000 - 3000);
+  assert.equal(Fin.acertoConjunta(e, HOJE, 60), 8000 - 3600);
+  lanc(e, { tipo: 'despesa', valor: 7000, data: '2026-11-06', area: 'p2', transferencia: true, acerto: true });
+  lanc(e, { tipo: 'receita', valor: 7000, data: '2026-11-06', area: 'p1', transferencia: true, acerto: true });
+  assert.equal(Fin.acertoConjunta(e, HOJE), 0);
+});

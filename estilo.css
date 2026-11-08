@@ -108,6 +108,9 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .pos { color: var(--pos); }
 .neg { color: var(--neg); }
 .saida { color: var(--saida); }
+.transf { color: var(--tinta-2); }
+.acerto-frase { font-size: 16px; }
+.acerto-frase b.num { font-size: 18px; }
 .mudo { color: var(--tinta-2); }
 .pequeno { font-size: 13px; }
 
