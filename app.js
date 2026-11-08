@@ -561,7 +561,7 @@
     return `<div class="linha-item">${check}
       <button type="button" class="linha-corpo" data-acao="abrir-item" data-id="${esc(item.id)}">
         <span class="linha-texto"><b>${esc(item.descricao)}${etiquetas}</b><small>${esc(partes.join(' · '))}</small></span>
-        <span class="linha-valor num ${item.tipo === 'receita' ? 'pos' : ''}">${item.tipo === 'receita' ? '+' : ''}${reais(item.valor)}</span>
+        <span class="linha-valor num ${item.tipo === 'receita' ? 'pos' : 'saida'}">${item.tipo === 'receita' ? '+' : '−'}${reais(item.valor)}</span>
       </button></div>`;
   }
 
@@ -634,7 +634,7 @@
 
   function linhaProximo(i) {
     const entrada = i.tipo === 'receita';
-    const corpo = `<span class="linha-texto"><b>${esc(i.descricao)}${i.atrasado ? `<span class="etiqueta atraso">${entrada ? 'A confirmar' : 'Vencido'}</span>` : ''}</b><small>${esc(nomeDia(i.quando))}${i.fatura ? '' : ' · ' + esc(nomeConta(i.contaId))}</small></span><span class="linha-valor num ${entrada ? 'pos' : ''}">${entrada ? '+' : ''}${reais(i.valor)}</span>`;
+    const corpo = `<span class="linha-texto"><b>${esc(i.descricao)}${i.atrasado ? `<span class="etiqueta atraso">${entrada ? 'A confirmar' : 'Vencido'}</span>` : ''}</b><small>${esc(nomeDia(i.quando))}${i.fatura ? '' : ' · ' + esc(nomeConta(i.contaId))}</small></span><span class="linha-valor num ${entrada ? 'pos' : 'saida'}">${entrada ? '+' : '−'}${reais(i.valor)}</span>`;
     if (i.fatura) return `<div class="linha-item"><a class="linha-corpo" href="#lancamentos" style="color:inherit;text-decoration:none">${corpo}</a></div>`;
     return `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="abrir-item" data-id="${esc(i.id)}">${corpo}</button></div>`;
   }
@@ -674,7 +674,7 @@
         </div>
         <div class="resumo-3" style="margin-top:10px">
           <div><small>Entradas</small><strong class="num pos">${reais(r.entradasCertas, { compacto: true })}</strong></div>
-          <div><small>Saídas</small><strong class="num">${reais(r.saidas, { compacto: true })}</strong></div>
+          <div><small>Saídas</small><strong class="num saida">${r.saidas ? '−' : ''}${reais(r.saidas, { compacto: true })}</strong></div>
           <div><small>Sobra</small><strong class="num ${r.sobra < 0 ? 'neg' : ''}">${reais(r.sobra, { compacto: true })}</strong></div>
         </div>
         ${r.entradasProvaveis ? `<p class="nota" style="margin-top:8px">Mais ${reais(r.entradasProvaveis)} em entradas prováveis, fora da conta acima.</p>` : ''}
@@ -725,7 +725,7 @@
       .sort((a, b) => (a.data < b.data ? -1 : 1));
     const linhaFixo = (r) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="editar-fixo" data-id="${esc(r.id)}">
         <span class="linha-texto"><b>${esc(r.descricao)}${r.certeza === 'provavel' ? '<span class="etiqueta provavel">Provável</span>' : ''}</b><small>Dia ${Number(r.inicio.slice(8, 10))} · ${esc(nomeCategoria(r.categoriaId))} · ${esc(nomeConta(r.contaId))}${r.fim ? ' · até ' + esc(nomeMes(r.fim)) : ''}</small></span>
-        <span class="linha-valor num ${r.tipo === 'receita' ? 'pos' : ''}">${r.tipo === 'receita' ? '+' : ''}${reais(r.valor)}</span></button></div>`;
+        <span class="linha-valor num ${r.tipo === 'receita' ? 'pos' : 'saida'}">${r.tipo === 'receita' ? '+' : '−'}${reais(r.valor)}</span></button></div>`;
     return `<div class="colunas">
       <div class="pilha">
         <section class="cartao">
@@ -1267,7 +1267,7 @@
       <p class="nota">Têm data anterior ao dia do saldo informado, então o valor informado já os incluía. Ficam no histórico e nos gráficos, mas não mudam o saldo de novo.</p>
       <div>${comp.antes.slice(0, 8).map((l) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="abrir-item" data-id="${esc(l.id)}">
         <span class="linha-texto"><b>${esc(l.descricao)}</b><small>${dataBR(Fin.dataCaixa(estado, l))} · ${esc(nomeConta(l.contaId))}</small></span>
-        <span class="linha-valor num ${l.tipo === 'receita' ? 'pos' : ''}">${l.tipo === 'receita' ? '+' : ''}${reais(l.valor)}</span></button></div>`).join('')}</div>
+        <span class="linha-valor num ${l.tipo === 'receita' ? 'pos' : 'saida'}">${l.tipo === 'receita' ? '+' : '−'}${reais(l.valor)}</span></button></div>`).join('')}</div>
       ${comp.antes.length > 8 ? `<p class="nota">E mais ${comp.antes.length - 8}.</p>` : ''}
       <p class="nota">Se algum deles saiu ou entrou depois do saldo informado, abra e mude a data.</p>` : ''}
       <h3 style="margin-top:6px">Por conta</h3>
