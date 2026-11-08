@@ -63,6 +63,7 @@ Para instalar no celular:
 ## Como o app calcula
 
 - **Saldo hoje:** saldo informado das contas mais o que foi pago ou recebido a partir do dia desse saldo. O que tem data anterior já está dentro dele: fica no histórico, sem alterar o valor. Toque na linha abaixo do saldo, na tela inicial, para ver essa conta e corrigir o saldo de cada conta.
+- **Ajustar ao banco:** se o saldo de uma conta não bater com o banco, toque no saldo da tela inicial e depois na conta, ou abra a conta em Ajustes, e digite o saldo que o banco mostra. O app acerta o ponto de partida da conta, sem mudar nenhum lançamento, e avisa antes sobre o que está marcado como pago com data futura.
 - **Entradas e saídas do mês:** somam tudo o que tem data no mês, inclusive o que ainda está previsto. A barra e a linha de baixo mostram quanto disso já aconteceu.
 - **Cartão:** a compra aparece no mês em que foi feita, mas só sai do saldo no vencimento da fatura, pela conta escolhida no cartão. O app considera a fatura paga inteira nessa data. Compras no dia do fechamento ou depois vão para a fatura seguinte.
 - **Fixos:** aparecem todo mês como previstos até serem confirmados. Fixos no cartão são confirmados sozinhos quando a data chega. Ao cadastrar um fixo com início no passado, os meses anteriores entram como já pagos ou recebidos; nas entradas prováveis, não entram.

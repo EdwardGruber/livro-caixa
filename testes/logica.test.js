@@ -466,3 +466,34 @@ test('valor é pontuado enquanto se digita', () => {
   ['10.000', '1.234.567,89', '0,5', '1.500'].forEach((t) => assert.equal(Fin.lerReais(t), Fin.lerReais(f(t).texto)));
   assert.equal(Fin.lerReais(f('10000').texto), 1000000);
 });
+
+test('ajustar ao banco: o saldo de hoje passa a bater e nenhum lançamento muda', () => {
+  const e = Fin.estadoPadrao();
+  e.contas['ct-banco'].saldoInicial = 0;
+  e.contas['ct-banco'].saldoData = '2026-11-01';
+  lanc(e, { tipo: 'receita', valor: 344850, data: '2026-11-06' });
+  lanc(e, { valor: 270795, data: '2026-11-03' });
+  const conta = e.contas['ct-banco'];
+  assert.equal(Fin.saldoConta(e, conta, '2026-11-07'), 74055);
+  const qtd = Object.keys(e.lancamentos).length;
+  const { saldoInicial, diferenca } = Fin.ajusteAoBanco(e, conta, '2026-11-07', 3396);
+  assert.equal(diferenca, 3396 - 74055);
+  assert.equal(saldoInicial, -70659);
+  conta.saldoInicial = saldoInicial;
+  assert.equal(Fin.saldoConta(e, conta, '2026-11-07'), 3396);
+  assert.equal(Fin.saldoHoje(e, '2026-11-07'), 3396);
+  assert.equal(Object.keys(e.lancamentos).length, qtd);
+});
+
+test('ajustar ao banco considera a fatura paga pela conta e aponta o que foi pago adiantado', () => {
+  const e = base();
+  lanc(e, { valor: 60000, data: '2026-09-10', contaId: 'visa' }); // fatura venceu 05/10
+  const adiantado = lanc(e, { valor: 100000, data: '2026-11-10', descricao: 'Parcela do carro' });
+  lanc(e, { valor: 5000, data: '2026-11-12', pago: false });
+  lanc(e, { valor: 7000, data: '2026-11-20', contaId: 'visa' });
+  const conta = e.contas['ct-banco'];
+  assert.deepEqual(Fin.pagosAdiantados(e, conta, HOJE).map((l) => l.id), [adiantado.id]);
+  conta.saldoInicial = Fin.ajusteAoBanco(e, conta, HOJE, 12345).saldoInicial;
+  assert.equal(Fin.saldoConta(e, conta, HOJE), 12345);
+  assert.deepEqual(Fin.pagosAdiantados(e, e.contas.esc, HOJE), []);
+});

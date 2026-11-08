@@ -1,5 +1,5 @@
 /* Finanças G&L — permite abrir o app sem internet. Nunca toca nas chamadas à planilha. */
-const VERSAO = 'financasgl-v10';
+const VERSAO = 'financasgl-v11';
 const ARQUIVOS = [
   './', 'index.html', 'estilo.css', 'tema.js', 'logica.js', 'sincronia.js', 'graficos.js', 'app.js',
   'pdf.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest', 'icones/icone-192.png', 'icones/icone-512.png', 'icones/icone-maskable-512.png',

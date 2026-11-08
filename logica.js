@@ -357,6 +357,22 @@
     return total;
   }
 
+  /* Ajustar ao banco: muda só o ponto de partida da conta, para o saldo de hoje bater com o banco. */
+  function ajusteAoBanco(estado, conta, hoje, valorBanco) {
+    const diferenca = valorBanco - saldoConta(estado, conta, hoje);
+    return { saldoInicial: (conta.saldoInicial || 0) + diferenca, diferenca };
+  }
+
+  /* Marcados como pagos com data que ainda não chegou: já descontados no app, talvez não no banco. */
+  function pagosAdiantados(estado, conta, hoje) {
+    return vivos(estado, 'lancamentos')
+      .filter((l) => {
+        const caixa = contaDoCaixa(estado, l);
+        return caixa && caixa.id === conta.id && !ehCartao(estado, l) && l.pago && l.data > hoje;
+      })
+      .sort((a, b) => (a.data < b.data ? -1 : 1));
+  }
+
   /* Contas de antes da data do saldo: o saldo vale antes do primeiro movimento e da última edição. */
   function dataDoSaldoAntigo(estado, conta, hoje) {
     let menor = hojeLocal(new Date(conta.atualizadoEm));
@@ -669,6 +685,7 @@
     historicoSaldo, resumoMes, proximos, criarParcelas, parcelamentos, previsaoMeta, alertas,
     ehCartao, sinal, contaPagadora, dataDoSaldo, jaNoSaldo, dataDoPagamento, dataDoSaldoAntigo,
     realDaOcorrencia, fixosDoCartaoVencidos, guardadoMeta, aporteDoMes, composicaoSaldo, formatarDigitando,
+    ajusteAoBanco, pagosAdiantados,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Fin = api;

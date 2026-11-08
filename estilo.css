@@ -412,7 +412,7 @@ dialog#folha::backdrop { background: rgb(5 15 12 / .5); animation: escurece .2s 
 }
 .folha-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .folha-topo h2 { font-size: 20px; }
-.valor-grande { position: relative; }
+.valor-grande { position: relative; display: block; }
 .valor-grande span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font: 700 22px var(--titulo); color: var(--tinta-2); pointer-events: none; }
 .valor-grande input { min-height: 64px; padding-left: 52px; font: 700 30px var(--titulo); letter-spacing: -.01em; }
 .erro-campo { color: var(--neg); font-size: 13px; font-weight: 600; }

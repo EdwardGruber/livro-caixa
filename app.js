@@ -1204,6 +1204,7 @@
         </div>
         <label class="campo"><span>A fatura é paga por</span><select id="c-paga">${pagadoras.map((x) => `<option value="${esc(x.id)}" ${pagadora && pagadora.id === x.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>
       </div>
+      ${!novo && c.tipo !== 'cartao' ? `<button type="button" class="btn" data-acao="ajustar-banco" data-id="${esc(c.id)}">Ajustar ao saldo do banco</button>` : ''}
       <div class="acoes"><button type="submit" class="btn primario" style="flex:1 1 100%">Salvar</button>
       ${novo ? '' : '<button type="button" class="btn perigo" data-acao="excluir-conta">Excluir conta</button>'}</div>
     </form>`, novo ? '#c-nome' : null);
@@ -1268,10 +1269,36 @@
       ${comp.antes.length > 8 ? `<p class="nota">E mais ${comp.antes.length - 8}.</p>` : ''}
       <p class="nota">Se algum deles saiu ou entrou depois do saldo informado, abra e mude a data.</p>` : ''}
       <h3 style="margin-top:6px">Por conta</h3>
-      <div>${contas.map((c) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="editar-conta" data-id="${esc(c.id)}">
-        <span class="linha-texto"><b>${esc(c.nome)}</b><small>${reais(c.saldoInicial || 0)} informado${c.saldoData ? ' em ' + dataBR(c.saldoData) : ''} · tocar para corrigir</small></span>
-        <span class="linha-valor num">${reais(Fin.saldoConta(estado, c, h))}</span></button></div>`).join('')}</div>
-      <p class="nota">Se uma conta não bate com o banco, toque nela e informe o saldo de hoje.</p>`);
+      <div>${contas.map((c) => `<div class="linha-item"><button type="button" class="linha-corpo" data-acao="ajustar-banco" data-id="${esc(c.id)}">
+        <span class="linha-texto"><b>${esc(c.nome)}</b><small>Não bate com o banco? Toque para ajustar</small></span>
+        <span class="linha-valor num">${reais(Fin.saldoConta(estado, c, h))}</span></button></div>`).join('')}</div>`);
+  }
+
+  function formAjuste(c) {
+    const h = hoje();
+    const noApp = Fin.saldoConta(estado, c, h);
+    const adiantados = Fin.pagosAdiantados(estado, c, h);
+    abrirFolha(`<form data-form="ajuste" data-id="${esc(c.id)}" novalidate style="display:grid;gap:14px">
+      ${topoFolha('Ajustar ao banco')}
+      <p class="nota">Em <b>${esc(c.nome)}</b> o app mostra <b class="num">${reais(noApp)}</b>. Digite o saldo que aparece no banco agora: o app acerta o ponto de partida da conta e nenhum lançamento muda.</p>
+      ${adiantados.length ? `<div class="alerta">${icone('alerta')}<div><b>Confira antes de ajustar</b><span>${adiantados.length > 1 ? 'Estes estão marcados como pagos, mas a data ainda não chegou' : 'Este está marcado como pago, mas a data ainda não chegou'}: ${adiantados.slice(0, 4).map((l) => `${esc(l.descricao)} (${dataCurta(l.data)}, ${reais(l.valor)})`).join(', ')}${adiantados.length > 4 ? ` e mais ${adiantados.length - 4}` : ''}. Se ainda não saiu do banco, desmarque antes.</span></div></div>` : ''}
+      <label class="campo"><span>Saldo no banco agora</span><span class="com-sinal"><span class="valor-grande"><span>R$</span><input id="a-valor" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></span><button type="button" class="btn sinal" data-acao="inverter-sinal" data-alvo="a-valor" aria-label="Trocar entre saldo positivo e negativo">±</button></span></label>
+      <p class="dica-campo" id="a-dica" hidden></p>
+      <p class="erro-campo" id="a-erro" hidden></p>
+      <button type="submit" class="btn primario">Ajustar</button>
+    </form>`, '#a-valor');
+  }
+
+  function dicaAjuste() {
+    const form = $('form[data-form="ajuste"]');
+    const dica = $('#a-dica');
+    if (!form || !dica) return;
+    const texto = $('#a-valor').value.trim();
+    const conta = estado.contas[form.dataset.id];
+    if (!texto || !conta) { dica.hidden = true; return; }
+    const { diferenca } = Fin.ajusteAoBanco(estado, conta, hoje(), lerReais(texto));
+    dica.textContent = diferenca === 0 ? 'Já está igual ao banco.' : `O saldo do app vai ${diferenca > 0 ? 'subir' : 'descer'} ${reais(Math.abs(diferenca))}.`;
+    dica.hidden = false;
   }
 
   function pedirConfirmacao(titulo, texto, rotulo, aoConfirmar) {
@@ -1567,6 +1594,7 @@
     fechar: fecharFolha,
     novo: () => formularioNovo(),
     'ver-saldo': folhaSaldo,
+    'ajustar-banco': (b) => { const c = estado.contas[b.dataset.id]; if (c) formAjuste(c); },
     'inverter-sinal': (b) => {
       const campo = $('#' + b.dataset.alvo);
       if (!campo) return;
@@ -1828,6 +1856,25 @@
 
   const formularios = {
     lancamento: salvarFormulario,
+    ajuste: (f) => {
+      const conta = estado.contas[f.dataset.id];
+      const texto = $('#a-valor').value.trim();
+      if (!texto) {
+        const erro = $('#a-erro');
+        erro.textContent = 'Digite o saldo que aparece no banco.';
+        erro.hidden = false;
+        $('#a-valor').focus();
+        return;
+      }
+      const valor = lerReais(texto);
+      const { saldoInicial, diferenca } = Fin.ajusteAoBanco(estado, conta, hoje(), valor);
+      fecharFolha();
+      if (!diferenca) { avisar('Já estava igual ao banco'); return; }
+      const anterior = { ...conta };
+      gravar('contas', { ...conta, saldoInicial });
+      concluir();
+      avisar(`${conta.nome} ajustada para ${reais(valor)}`, () => { gravar('contas', anterior); concluir(); });
+    },
     nomes: () => {
       const nome1 = $('#n-nome1').value.trim();
       const nome2 = $('#n-nome2').value.trim();
@@ -1912,7 +1959,7 @@
     if (ui.redesenhar) desenhar();
   });
 
-  const PODE_NEGATIVO = new Set(['c-saldo', 'saldo-inicial']);
+  const PODE_NEGATIVO = new Set(['c-saldo', 'saldo-inicial', 'a-valor']);
   function pontuarValor(el, e) {
     // Colado, preenchido automaticamente ou ditado: chega de uma vez, então lê o valor inteiro.
     if (e.inputType === 'insertFromPaste' || e.inputType === 'insertReplacementText' || (e.data && e.data.length > 1)) {
@@ -1941,6 +1988,8 @@
       pintarSimulacao(false);
     } else if (id && id.startsWith('f-') && form) {
       atualizarDicasForm();
+    } else if (id === 'a-valor') {
+      dicaAjuste();
     } else if (id === 'c-saldo') {
       // Saldo novo é o de hoje, a menos que a pessoa escolha outro dia.
       $('#c-saldo-data').value = hoje();
